@@ -4,7 +4,7 @@ from contextlib import contextmanager
 import pytest
 from fastapi.testclient import TestClient
 from langchain_core.embeddings import DeterministicFakeEmbedding
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from app.errors import RATE_LIMIT_MESSAGE
 from app.main import create_app
@@ -37,6 +37,7 @@ def make_client(keyed_settings):
         with TestClient(app) as c:
             yield c
 
+    factory.settings = keyed_settings
     return factory
 
 
@@ -186,3 +187,86 @@ def test_history_survives_restart(make_client, tmp_path):
     assert len(before["messages"]) == 2
     with make_client([]) as client:
         assert client.get("/api/chat/t1/history").json() == before
+
+
+def test_sources_event_carries_final_answer(make_client, tmp_path):
+    pre_tool = AIMessage(
+        "Сейчас поищу.", tool_calls=[{"name": "search_documents", "args": {"query": "отпуск"}, "id": "c1"}]
+    )
+    final = "Ответ [a.pdf, стр. 1]."
+    with make_client([pre_tool, AIMessage(final)]) as client:
+        upload_pdf(client, tmp_path)
+        _, events = chat(client, "Сколько дней отпуска?")
+        history = client.get("/api/chat/t1/history").json()["messages"]
+    assert "Сейчас поищу." in "".join(tokens(events))
+    payload = [data for name, data in events if name == "sources"][0]
+    assert payload == {"answer": final, "sources": [{"source": "a.pdf", "page": 1, "section": None}]}
+    assert history[-1]["role"] == "assistant"
+    assert history[-1]["content"] == final
+
+
+def assert_no_dangling_tool_calls(messages) -> None:
+    for i, msg in enumerate(messages):
+        if isinstance(msg, AIMessage) and msg.tool_calls:
+            following = messages[i + 1 :]
+            answered = {m.tool_call_id for m in following if isinstance(m, ToolMessage)}
+            assert {tc["id"] for tc in msg.tool_calls} <= answered, msg.tool_calls
+
+
+def test_tool_error_repairs_thread(make_client, tmp_path):
+    model = ScriptedChatModel(responses=[search_call("c1"), AIMessage("Привет!")])
+    app = create_app(
+        make_client.settings, embeddings=DeterministicFakeEmbedding(size=64), chat_model=model
+    )
+    with TestClient(app) as client:
+        upload_pdf(client, tmp_path)
+        store = app.state.store
+
+        def broken_search(*args, **kwargs):
+            raise RuntimeError("chroma is down")
+
+        original = store.search
+        store.search = broken_search
+        try:
+            _, events = chat(client, "Сколько дней отпуска?")
+        finally:
+            store.search = original
+        names = [name for name, _ in events]
+        assert names[-2:] == ["error", "done"]
+        assert events[-2][1]["message"].startswith("Ошибка обращения к Gemini API")
+
+        _, events = chat(client, "Привет")
+        assert "".join(tokens(events)) == "Привет!"
+        assert events[-1][0] == "done"
+
+        assert len(model.calls) == 2  # the repaired thread does not trigger an extra model step
+        next_input = model.calls[-1]
+        assert isinstance(next_input[-1], HumanMessage) and next_input[-1].content == "Привет"
+        assert any(isinstance(m, ToolMessage) and m.tool_call_id == "c1" for m in next_input)
+        assert_no_dangling_tool_calls(next_input)
+
+        history = client.get("/api/chat/t1/history").json()["messages"]
+    assert [(m["role"], m["content"]) for m in history] == [
+        ("user", "Сколько дней отпуска?"),
+        ("user", "Привет"),
+        ("assistant", "Привет!"),
+    ]
+
+
+def test_repair_failure_still_ends_stream(make_client, tmp_path, caplog):
+    model = ScriptedChatModel(responses=[search_call("c1")])
+    app = create_app(make_client.settings, embeddings=DeterministicFakeEmbedding(size=64), chat_model=model)
+    with TestClient(app) as client:
+        upload_pdf(client, tmp_path)
+
+        def broken_search(*args, **kwargs):
+            raise RuntimeError("chroma is down")
+
+        async def broken_update(*args, **kwargs):
+            raise RuntimeError("sqlite is down")
+
+        app.state.store.search = broken_search
+        app.state.agent.aupdate_state = broken_update
+        _, events = chat(client, "Сколько дней отпуска?")
+    assert [name for name, _ in events][-2:] == ["error", "done"]
+    assert any("Не удалось восстановить историю чата" in r.getMessage() for r in caplog.records)

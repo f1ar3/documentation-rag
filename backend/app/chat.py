@@ -4,7 +4,7 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
-from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, HumanMessage, ToolMessage
 
 from app.citations import Source, extract_sources, found_sources_for_turn
 from app.errors import classify_llm_error
@@ -12,6 +12,8 @@ from app.errors import classify_llm_error
 logger = logging.getLogger(__name__)
 
 MODEL_NODE = "model"
+TOOLS_NODE = "tools"
+INTERRUPTED_TOOL_RESULT = "Поиск прерван из-за ошибки."
 
 
 def _config(thread_id: str) -> dict[str, Any]:
@@ -32,8 +34,36 @@ async def _state_messages(agent: Any, thread_id: str) -> list[BaseMessage]:
     return list((state.values or {}).get("messages", []))
 
 
+def _dangling_tool_calls(messages: list[BaseMessage]) -> list[dict]:
+    """Tool calls of the last AIMessage that have no ToolMessage after it."""
+    for i in range(len(messages) - 1, -1, -1):
+        msg = messages[i]
+        if isinstance(msg, AIMessage):
+            answered = {m.tool_call_id for m in messages[i + 1 :] if isinstance(m, ToolMessage)}
+            return [tc for tc in msg.tool_calls if tc["id"] not in answered]
+        if isinstance(msg, HumanMessage):
+            return []
+    return []
+
+
+async def _repair_thread(agent: Any, thread_id: str) -> None:
+    """After a failed run, answer tool calls left without results, so the next turn's model input is valid.
+
+    Providers reject a history where an AIMessage with tool_calls is not followed by ToolMessages for every id.
+    The update is written as the "tools" node: the same writer that normally appends tool results.
+    """
+    config = _config(thread_id)
+    dangling = _dangling_tool_calls(await _state_messages(agent, thread_id))
+    if not dangling:
+        return
+    results = [
+        ToolMessage(content=INTERRUPTED_TOOL_RESULT, tool_call_id=tc["id"], name=tc["name"]) for tc in dangling
+    ]
+    await agent.aupdate_state(config, {"messages": results}, as_node=TOOLS_NODE)
+
+
 async def stream_answer(agent: Any, thread_id: str, message: str) -> AsyncIterator[dict]:
-    """token* -> sources -> done; on a failure during the run: token* -> error -> done."""
+    """token* -> sources {answer, sources} -> done; on a failure during the run: token* -> error -> done."""
     config = _config(thread_id)
     try:
         async for chunk, metadata in agent.astream(
@@ -46,12 +76,18 @@ async def stream_answer(agent: Any, thread_id: str, message: str) -> AsyncIterat
                 yield {"event": "token", "data": {"text": text}}
 
         messages = await _state_messages(agent, thread_id)
+        answer = ""
         sources: list[Source] = []
         if messages and _is_final_answer(messages[-1]):
+            answer = messages[-1].text
             sources = _answer_sources(messages, len(messages) - 1)
-        yield {"event": "sources", "data": {"sources": sources}}
+        yield {"event": "sources", "data": {"answer": answer, "sources": sources}}
     except Exception as exc:  # CancelledError (client disconnect) is a BaseException and propagates
         logger.warning("Ошибка при генерации ответа в чате %s", thread_id, exc_info=True)
+        try:
+            await _repair_thread(agent, thread_id)
+        except Exception:
+            logger.exception("Не удалось восстановить историю чата %s после ошибки", thread_id)
         yield {"event": "error", "data": {"message": classify_llm_error(exc)[1]}}
     yield {"event": "done", "data": {}}
 
