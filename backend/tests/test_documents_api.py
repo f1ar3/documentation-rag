@@ -1,3 +1,5 @@
+import unicodedata
+
 from langchain_core.embeddings import DeterministicFakeEmbedding
 from fastapi.testclient import TestClient
 
@@ -180,3 +182,14 @@ def test_reupload_move_failure_keeps_previous_document(client, keyed_settings, m
     assert (keyed_settings.uploads_dir / "a.txt").read_text(encoding="utf-8") == "старый текст"
     hits = client.app.state.store.search("текст", 5)
     assert hits and all("старый" in h.text for h in hits)
+
+
+def test_upload_nfd_name_normalized_to_nfc(client, keyed_settings):
+    nfc = "Отчёт за май.txt"
+    nfd = unicodedata.normalize("NFD", nfc)  # macOS file names: "й" and "ё" as base letter + combining mark
+    assert nfd != nfc
+    resp = post(client, (nfd, LONG.encode()))
+    assert resp.status_code == 200
+    assert resp.json()["documents"][0]["name"] == nfc
+    assert uploads(keyed_settings) == [nfc]
+    assert [d["name"] for d in client.get("/api/documents").json()["documents"]] == [nfc]

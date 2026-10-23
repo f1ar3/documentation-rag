@@ -270,3 +270,9 @@ def test_repair_failure_still_ends_stream(make_client, tmp_path, caplog):
         _, events = chat(client, "Сколько дней отпуска?")
     assert [name for name, _ in events][-2:] == ["error", "done"]
     assert any("Не удалось восстановить историю чата" in r.getMessage() for r in caplog.records)
+
+
+def test_history_thread_id_length_validated(make_client):
+    with make_client([]) as client:
+        assert client.get(f"/api/chat/{'t' * 101}/history").status_code == 422
+        assert client.get(f"/api/chat/{'t' * 100}/history").json() == {"messages": []}

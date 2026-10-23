@@ -20,10 +20,14 @@ export type ChatHandlers = {
 
 const NETWORK_ERROR = 'Не удалось связаться с сервером'
 const STREAM_CUT = 'Ответ прервался, попробуйте ещё раз'
+const CHAT_INVALID = 'Сообщение слишком длинное или пустое'
+const FILE_TOO_LARGE = 'Файл слишком большой (максимум 20 МБ)'
 
 function detailToMessage(detail: unknown, status: number): string {
   if (typeof detail === 'string' && detail) return detail
   if (Array.isArray(detail)) return 'Некорректный запрос'
+  // nginx rejects an oversized body itself, with an HTML page instead of the backend's JSON.
+  if (status === 413) return FILE_TOO_LARGE
   return `Ошибка запроса (${status})`
 }
 
@@ -110,7 +114,8 @@ export async function streamChat(
       signal,
     })
     if (!response.ok) {
-      handlers.onError((await toApiError(response)).message)
+      // 422 here is the request validation of thread_id / message (1..4000 characters).
+      handlers.onError(response.status === 422 ? CHAT_INVALID : (await toApiError(response)).message)
       return
     }
     if (!response.body) {

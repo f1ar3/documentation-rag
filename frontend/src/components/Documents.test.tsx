@@ -109,4 +109,22 @@ describe('Documents', () => {
     expect(toast.loading).toHaveBeenCalledWith('Загружаю scan.pdf...')
     await waitFor(() => expect(screen.queryByText('scan.pdf')).not.toBeInTheDocument())
   })
+  it('rejects a file over 20 MB on the client without uploading it', async () => {
+    uploadDocuments.mockResolvedValue([{ name: 'small.txt', chunks: 1 }])
+    const user = userEvent.setup()
+    renderDocs()
+    await screen.findByText('a.pdf')
+    const big = new File(['x'], 'big.pdf')
+    Object.defineProperty(big, 'size', { value: 20 * 1024 * 1024 + 1 })
+    const exact = new File(['x'], 'exact.pdf')
+    Object.defineProperty(exact, 'size', { value: 20 * 1024 * 1024 })
+    await user.upload(screen.getByLabelText('Выбрать файлы для загрузки'), [
+      big,
+      exact,
+      new File(['y'], 'small.txt'),
+    ])
+    expect(toast.error).toHaveBeenCalledWith('Файл big.pdf больше 20 МБ')
+    await waitFor(() => expect(uploadDocuments).toHaveBeenCalledTimes(2))
+    expect(uploadDocuments.mock.calls.map((c) => c[0][0].name)).toEqual(['exact.pdf', 'small.txt'])
+  })
 })

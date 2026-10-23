@@ -7,8 +7,10 @@ import unicodedata
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response, UploadFile
+from fastapi import Path as FastAPIPath
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -58,7 +60,9 @@ def safe_file_name(filename: str | None) -> str:
     """Basename only; quotes and square brackets are removed (they would break citation labels)."""
     # Browsers and httpx percent-encode a double quote in multipart file names as %22.
     # Control characters arrive percent-encoded (%09, %0A, ...) from browsers and httpx.
-    filename = _PCT_CONTROL_RE.sub("", filename or "")
+    # macOS sends names in NFD ("й" as "и" + combining breve); NFC keeps names comparable and citations stable.
+    filename = unicodedata.normalize("NFC", filename or "")
+    filename = _PCT_CONTROL_RE.sub("", filename)
     name = Path((filename).replace("%22", '"').replace("\\", "/")).name
     name = name.translate(_REMOVED_NAME_CHARS)
     return "".join(c for c in name if not unicodedata.category(c).startswith("C")).strip()
@@ -205,7 +209,9 @@ def create_app(
         return EventSourceResponse(_sse_events(request.app.state.agent, body.thread_id, body.message))
 
     @api.get("/chat/{thread_id}/history")
-    async def chat_history(request: Request, thread_id: str) -> dict[str, list[dict]]:
+    async def chat_history(
+        request: Request, thread_id: Annotated[str, FastAPIPath(min_length=1, max_length=100)]
+    ) -> dict[str, list[dict]]:
         return {"messages": await get_history(request.app.state.agent, thread_id)}
 
     app.include_router(api)

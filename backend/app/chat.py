@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from typing import Any
@@ -47,7 +48,7 @@ def _dangling_tool_calls(messages: list[BaseMessage]) -> list[dict]:
 
 
 async def _repair_thread(agent: Any, thread_id: str) -> None:
-    """After a failed run, answer tool calls left without results, so the next turn's model input is valid.
+    """After a failed or cancelled run, answer tool calls left without results, so the next turn's model input is valid.
 
     Providers reject a history where an AIMessage with tool_calls is not followed by ToolMessages for every id.
     The update is written as the "tools" node: the same writer that normally appends tool results.
@@ -62,9 +63,19 @@ async def _repair_thread(agent: Any, thread_id: str) -> None:
     await agent.aupdate_state(config, {"messages": results}, as_node=TOOLS_NODE)
 
 
+async def _safe_repair(agent: Any, thread_id: str) -> None:
+    """_repair_thread that never raises: a failed repair is logged and the caller goes on."""
+    try:
+        await _repair_thread(agent, thread_id)
+    except Exception:
+        logger.exception("Не удалось восстановить историю чата %s", thread_id)
+
+
 async def stream_answer(agent: Any, thread_id: str, message: str) -> AsyncIterator[dict]:
     """token* -> sources {answer, sources} -> done; on a failure during the run: token* -> error -> done."""
     config = _config(thread_id)
+    # A previous run may have been cancelled mid-tool (client Stop / chat switch) and left a dangling tool call.
+    await _safe_repair(agent, thread_id)
     try:
         async for chunk, metadata in agent.astream(
             {"messages": [{"role": "user", "content": message}]}, config, stream_mode="messages"
@@ -82,12 +93,17 @@ async def stream_answer(agent: Any, thread_id: str, message: str) -> AsyncIterat
             answer = messages[-1].text
             sources = _answer_sources(messages, len(messages) - 1)
         yield {"event": "sources", "data": {"answer": answer, "sources": sources}}
-    except Exception as exc:  # CancelledError (client disconnect) is a BaseException and propagates
-        logger.warning("Ошибка при генерации ответа в чате %s", thread_id, exc_info=True)
+    except asyncio.CancelledError:
+        # Client disconnect: sse-starlette cancels the generator. Repair the thread (shielded from the
+        # cancellation) so the checkpoint does not keep a tool call without results, then re-raise.
         try:
-            await _repair_thread(agent, thread_id)
-        except Exception:
-            logger.exception("Не удалось восстановить историю чата %s после ошибки", thread_id)
+            await asyncio.shield(_safe_repair(agent, thread_id))
+        except asyncio.CancelledError:
+            pass  # cancelled again while waiting: the shielded repair still runs to completion
+        raise
+    except Exception as exc:
+        logger.warning("Ошибка при генерации ответа в чате %s", thread_id, exc_info=True)
+        await _safe_repair(agent, thread_id)
         yield {"event": "error", "data": {"message": classify_llm_error(exc)[1]}}
     yield {"event": "done", "data": {}}
 

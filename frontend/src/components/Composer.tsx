@@ -8,6 +8,8 @@ import { IconButton } from './IconButton'
 
 const LINE_HEIGHT = 24
 const MAX_LINES = 8
+/** Same limit as the backend ChatRequest.message. */
+const MAX_MESSAGE_LENGTH = 4000
 
 export function Composer() {
   const { send, stop, busy, threadId } = useChat()
@@ -59,6 +61,7 @@ export function Composer() {
             aria-label="Сообщение"
             placeholder="Задайте вопрос по регламентам"
             rows={1}
+            maxLength={MAX_MESSAGE_LENGTH}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={onKeyDown}

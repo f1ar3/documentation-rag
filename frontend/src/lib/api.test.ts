@@ -95,14 +95,14 @@ describe('streamChat', () => {
     expect(h.onToken).not.toHaveBeenCalled()
   })
 
-  it('maps a 422 list detail to a readable message', async () => {
+  it('maps a 422 from /api/chat to a message about the message length', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(jsonResponse({ detail: [{ msg: 'field required' }] }, 422)),
     )
     const h = handlers()
     await streamChat('t1', '', h)
-    expect(h.onError).toHaveBeenCalledWith('Некорректный запрос')
+    expect(h.onError).toHaveBeenCalledWith('Сообщение слишком длинное или пустое')
     expect(h.onDone).toHaveBeenCalledTimes(1)
   })
 
@@ -216,6 +216,33 @@ describe('REST helpers', () => {
     const err = await deleteDocument('x.pdf').catch((e) => e)
     expect(err).toBeInstanceOf(ApiError)
     expect(err.status).toBe(404)
+  })
+
+  it('keeps the generic text for a 422 list detail outside /api/chat', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse({ detail: [{ msg: 'too long' }] }, 422)),
+    )
+    const err = await getHistory('t'.repeat(101)).catch((e) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err.message).toBe('Некорректный запрос')
+  })
+
+  it('maps a 413 without a JSON body (nginx) to a file size message', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('<html>413 Request Entity Too Large</html>', { status: 413 })),
+    )
+    const err = await uploadDocuments([new File(['a'], 'a.pdf')]).catch((e) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err.status).toBe(413)
+    expect(err.message).toBe('Файл слишком большой (максимум 20 МБ)')
+  })
+
+  it('keeps the server detail for a 413 with a JSON body', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ detail: 'Файл a.pdf больше 20 МБ' }, 413)))
+    const err = await uploadDocuments([new File(['a'], 'a.pdf')]).catch((e) => e)
+    expect(err.message).toBe('Файл a.pdf больше 20 МБ')
   })
 
   it('getHistory returns messages and encodes the thread id', async () => {

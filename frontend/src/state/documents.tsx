@@ -5,6 +5,8 @@ import { ApiError, deleteDocument, listDocuments, uploadDocuments } from '@/lib/
 import { isAccepted } from '@/lib/files'
 import type { DocumentInfo } from '@/lib/types'
 
+const MAX_FILE_SIZE = 20 * 1024 * 1024
+
 export type PendingUpload = { id: number; name: string }
 
 type DocumentsState = {
@@ -71,9 +73,13 @@ export function DocumentsProvider({
       const names = rejected.map((f) => f.name).join(', ')
       toast.error(`Формат не поддерживается: ${names}. Можно загружать PDF, DOCX, MD и TXT.`)
     }
-    if (accepted.length === 0) return
+    // Same limit as the backend: do not send a file that will be rejected after a long upload.
+    const tooLarge = accepted.filter((f) => f.size > MAX_FILE_SIZE)
+    for (const file of tooLarge) toast.error(`Файл ${file.name} больше 20 МБ`)
+    const sendable = accepted.filter((f) => f.size <= MAX_FILE_SIZE)
+    if (sendable.length === 0) return
 
-    const pending = accepted.map((file) => ({ id: ++uploadSeq.current, name: file.name, file }))
+    const pending = sendable.map((file) => ({ id: ++uploadSeq.current, name: file.name, file }))
     setUploads((prev) => [...prev, ...pending.map(({ id, name }) => ({ id, name }))])
 
     // One request per file: each file gets its own progress row and its own error message.

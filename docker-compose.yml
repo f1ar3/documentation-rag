@@ -8,10 +8,13 @@ services:
       # Пробрасываются из окружения оболочки, если заданы (иначе можно указать в .env)
       HTTPS_PROXY: ${HTTPS_PROXY:-}
       NO_PROXY: ${NO_PROXY:-backend,localhost,127.0.0.1}
+    extra_hosts:
+      # Прокси на хост-машине доступен из контейнера как host.docker.internal (на Linux нужна эта строка)
+      - "host.docker.internal:host-gateway"
     volumes:
       - rag-data:/data
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
       interval: 10s
       timeout: 5s
       retries: 5

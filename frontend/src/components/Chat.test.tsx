@@ -189,6 +189,15 @@ describe('Chat', () => {
     expect(signal?.aborted).toBe(true)
   })
 
+  it('limits the message field to 4000 characters like the server', () => {
+    render(
+      <ChatProvider>
+        <Chat />
+      </ChatProvider>,
+    )
+    expect(screen.getByRole('textbox', { name: 'Сообщение' })).toHaveAttribute('maxlength', '4000')
+  })
+
   it('Shift+Enter inserts a newline instead of sending', async () => {
     const user = userEvent.setup()
     render(
