@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     chunk_overlap: int = 200
     search_k: int = 5
     max_upload_mb: int = 20
+    retrieval_candidates: int = 10
+    bm25_weight: float = 0.5
 
     @property
     def chroma_dir(self) -> Path:

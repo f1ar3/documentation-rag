@@ -134,7 +134,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if not app.state.configured:
         yield
         return
-    store = DocumentStore(settings.chroma_dir, app.state.embeddings)
+    store = DocumentStore(
+        settings.chroma_dir,
+        app.state.embeddings,
+        candidates=settings.retrieval_candidates,
+        bm25_weight=settings.bm25_weight,
+    )
     async with AsyncSqliteSaver.from_conn_string(str(settings.checkpoints_path)) as checkpointer:
         app.state.store = store
         app.state.agent = build_agent(app.state.chat_model, store, settings.search_k, checkpointer)

@@ -104,3 +104,30 @@ def test_readd_fewer_chunks_removes_stale(store: DocumentStore):
     store.add("a.pdf", new)
     assert store.list() == [DocumentInfo("a.pdf", 1)]
     assert [h.text for h in store.search("текст", k=5)] == ["Новый единственный текст"]
+
+
+def test_failed_readd_keeps_bm25_on_old_chunks(tmp_path: Path):
+    old = [
+        Document(
+            page_content="Старый текст с термином ZORBLAX",
+            metadata={"source": "a.pdf", "page": 1, "section": None, "chunk_index": 0},
+        )
+    ]
+    new = [
+        Document(
+            page_content="Новый текст с термином FLUMMOX",
+            metadata={"source": "a.pdf", "page": 1, "section": None, "chunk_index": 0},
+        )
+    ]
+    DocumentStore(tmp_path, DeterministicFakeEmbedding(size=64)).add("a.pdf", old)
+    broken = DocumentStore(tmp_path, FailingEmbeddings(size=64))
+    with pytest.raises(RuntimeError):
+        broken.add("a.pdf", new)
+    assert [h.text for h in broken.search("ZORBLAX", 3)] == [old[0].page_content]
+    assert all("FLUMMOX" not in h.text for h in broken.search("FLUMMOX", 3))
+
+
+def test_chunks_stored_with_chunk_id(store: DocumentStore):
+    store.add("a.pdf", make_chunks("a.pdf", 2))
+    metas = store._store.get(include=["metadatas"])["metadatas"]
+    assert sorted(m["chunk_id"] for m in metas) == ["a.pdf::0", "a.pdf::1"]
