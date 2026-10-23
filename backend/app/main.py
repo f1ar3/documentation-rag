@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import re
@@ -11,8 +12,11 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Respons
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from pydantic import BaseModel, Field, field_validator
+from sse_starlette import EventSourceResponse
 
 from app.agent import build_agent
+from app.chat import get_history, stream_answer
 from app.config import Settings
 from app.errors import classify_llm_error
 from app.ingestion import SUPPORTED_EXTENSIONS, IngestionError, UnsupportedFormatError, load_and_split
@@ -25,6 +29,23 @@ _PCT_CONTROL_RE = re.compile(r"%[01][0-9A-Fa-f]")
 _CHUNK = 1024 * 1024
 MAX_NAME_BYTES = 200
 _REMOVED_NAME_CHARS = str.maketrans("", "", '"[]')
+
+
+class ChatRequest(BaseModel):
+    thread_id: str = Field(min_length=1, max_length=100)
+    message: str = Field(min_length=1, max_length=4000)
+
+    @field_validator("message")
+    @classmethod
+    def not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Сообщение не может состоять только из пробелов")
+        return value
+
+
+async def _sse_events(agent, thread_id: str, message: str) -> AsyncIterator[dict[str, str]]:
+    async for event in stream_answer(agent, thread_id, message):
+        yield {"event": event["event"], "data": json.dumps(event["data"], ensure_ascii=False)}
 
 
 def require_configured(request: Request) -> None:
@@ -173,6 +194,14 @@ def create_app(
             raise HTTPException(404, f"Документ {name} не найден")
         (request.app.state.settings.uploads_dir / Path(name).name).unlink(missing_ok=True)
         return Response(status_code=204)
+
+    @api.post("/chat")
+    async def chat(request: Request, body: ChatRequest) -> EventSourceResponse:
+        return EventSourceResponse(_sse_events(request.app.state.agent, body.thread_id, body.message))
+
+    @api.get("/chat/{thread_id}/history")
+    async def chat_history(request: Request, thread_id: str) -> dict[str, list[dict]]:
+        return {"messages": await get_history(request.app.state.agent, thread_id)}
 
     app.include_router(api)
     return app
