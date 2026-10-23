@@ -78,3 +78,9 @@ def test_found_sources_only_current_turn():
         AIMessage('ответ [b.md, раздел "Оборудование"]'),
     ]
     assert found_sources_for_turn(messages) == [b, a]
+
+
+def test_extract_sources_file_name_with_comma():
+    found = [{"source": "Положение, ред. 2.pdf", "page": 1, "section": None}]
+    answer = "Ответ [Положение, ред. 2.pdf, стр. 1]"
+    assert extract_sources(answer, found) == found

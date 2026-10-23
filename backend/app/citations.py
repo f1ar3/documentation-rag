@@ -22,9 +22,9 @@ def format_label(src: Source) -> str:
     return f"[{src['source']}]"
 
 
-# Name: anything except brackets, quotes, commas and newlines, ending with a supported extension.
+# Name: anything except brackets, quotes and newlines (commas allowed), ending with a supported extension.
 CITATION_RE = re.compile(
-    r"\[\s*(?P<name>[^\[\]\",\n]+?\.(?:pdf|docx|md|txt))"
+    r"\[\s*(?P<name>[^\[\]\"\n]+?\.(?:pdf|docx|md|txt))"
     r"(?:\s*,\s*стр\.\s?(?P<page>\d+)|\s*,\s*раздел\s+\"(?P<section>[^\"\[\]\n]+)\")?"
     r"\s*\]",
     re.IGNORECASE,
