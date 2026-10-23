@@ -12,6 +12,20 @@ export default defineConfig({
       '@': path.resolve(import.meta.dirname, './src'),
     },
   },
+  build: {
+    rolldownOptions: {
+      output: {
+        // Split stable vendor code into cacheable chunks (keeps every chunk under 500 kB).
+        codeSplitting: {
+          groups: [
+            { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
+            { name: 'ui', test: /node_modules[\\/](@base-ui|@floating-ui|sonner|lucide-react)[\\/]/ },
+            { name: 'vendor', test: /node_modules[\\/]/ },
+          ],
+        },
+      },
+    },
+  },
   server: {
     proxy: {
       '/api': 'http://localhost:8000',
@@ -19,5 +33,6 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts'],
   },
 })

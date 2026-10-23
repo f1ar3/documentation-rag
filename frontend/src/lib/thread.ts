@@ -22,3 +22,12 @@ export function newThreadId(): string {
   }
   return id
 }
+
+export function setThreadId(id: string): void {
+  memoryId = id
+  try {
+    localStorage.setItem(KEY, id)
+  } catch {
+    // localStorage unavailable: the id lives in memory only
+  }
+}

@@ -19,6 +19,7 @@ export type ChatHandlers = {
 }
 
 const NETWORK_ERROR = 'Не удалось связаться с сервером'
+const STREAM_CUT = 'Ответ прервался, попробуйте ещё раз'
 
 function detailToMessage(detail: unknown, status: number): string {
   if (typeof detail === 'string' && detail) return detail
@@ -79,6 +80,7 @@ export async function streamChat(
   signal?: AbortSignal,
 ): Promise<void> {
   let finished = false
+  let errored = false
   const finish = () => {
     if (finished) return
     finished = true
@@ -93,6 +95,7 @@ export async function streamChat(
     } else if (event === 'sources') {
       handlers.onSources((payload.sources as Source[]) ?? [], String(payload.answer ?? ''))
     } else if (event === 'error') {
+      errored = true
       handlers.onError(String(payload.message ?? NETWORK_ERROR))
     } else if (event === 'done') {
       finish()
@@ -122,6 +125,8 @@ export async function streamChat(
       parse(decoder.decode(value, { stream: true }))
     }
     parse(decoder.decode())
+    // The stream closed without "done" or "error": the answer was cut off.
+    if (!finished && !errored) handlers.onError(STREAM_CUT)
   } catch (err) {
     if (!isAbort(err)) handlers.onError(NETWORK_ERROR)
   } finally {

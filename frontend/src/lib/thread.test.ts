@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getThreadId, newThreadId } from './thread'
+import { getThreadId, newThreadId, setThreadId } from './thread'
 
 describe('thread id', () => {
   beforeEach(() => {
@@ -32,5 +32,14 @@ describe('thread id', () => {
     expect(id).toBeTruthy()
     expect(getThreadId()).toBe(id)
     expect(newThreadId()).not.toBe(id)
+  })
+})
+
+describe('setThreadId', () => {
+  beforeEach(() => localStorage.clear())
+
+  it('makes the given id current', () => {
+    setThreadId('abc')
+    expect(getThreadId()).toBe('abc')
   })
 })

@@ -122,6 +122,22 @@ describe('streamChat', () => {
     const h = handlers()
     await streamChat('t1', 'q', h)
     expect(h.onToken).toHaveBeenCalledWith('a')
+    expect(h.onError).toHaveBeenCalledTimes(1)
+    expect(h.onError).toHaveBeenCalledWith('Ответ прервался, попробуйте ещё раз')
+    expect(h.onDone).toHaveBeenCalledTimes(1)
+    expect(h.onError.mock.invocationCallOrder[0]).toBeLessThan(
+      h.onDone.mock.invocationCallOrder[0],
+    )
+  })
+
+  it('does not report a cut after an error event without done', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(sseResponse(['event: error\ndata: {"message":"Сбой"}\n\n'])),
+    )
+    const h = handlers()
+    await streamChat('t1', 'q', h)
+    expect(h.onError.mock.calls).toEqual([['Сбой']])
     expect(h.onDone).toHaveBeenCalledTimes(1)
   })
 
