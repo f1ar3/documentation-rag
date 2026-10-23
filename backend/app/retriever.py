@@ -29,18 +29,40 @@ def russian_tokenize(text: str) -> list[str]:
 
 
 class _ScoredBM25Retriever(BM25Retriever):
-    """BM25Retriever that drops zero-score documents.
+    """BM25Retriever that returns only chunks containing at least one query token.
 
     The stock retriever pads results with unrelated chunks when fewer than k match;
     in rank fusion that padding would add spurious scores to unrelated chunks.
+    Match is decided by term presence, not by score sign: BM25Okapi scores can be
+    zero or negative for real matches in small corpora.
     """
 
     def _get_relevant_documents(
         self, query: str, *, run_manager: CallbackManagerForRetrieverRun
     ) -> list[Document]:
-        scores = self.vectorizer.get_scores(self.preprocess_func(query))
-        ranked = sorted(range(len(self.docs)), key=lambda i: scores[i], reverse=True)
-        return [self.docs[i] for i in ranked[: self.k] if scores[i] > 0]
+        tokens = self.preprocess_func(query)
+        scores = self.vectorizer.get_scores(tokens)
+        matched = [
+            i
+            for i, freqs in enumerate(self.vectorizer.doc_freqs)
+            if any(t in freqs for t in tokens)
+        ]
+        matched.sort(key=lambda i: scores[i], reverse=True)  # stable: ties keep corpus order
+        return [self.docs[i] for i in matched[: self.k]]
+
+
+class _ChunkIdRetriever(BaseRetriever):
+    """Wraps a retriever and guarantees `chunk_id` in metadata (legacy chunks lack it)."""
+
+    inner: BaseRetriever
+
+    def _get_relevant_documents(
+        self, query: str, *, run_manager: CallbackManagerForRetrieverRun
+    ) -> list[Document]:
+        docs = self.inner.invoke(query)
+        for doc in docs:
+            doc.metadata.setdefault("chunk_id", doc.id or doc.page_content)
+        return docs
 
 
 class HybridRetriever(BaseRetriever):
@@ -55,7 +77,10 @@ class HybridRetriever(BaseRetriever):
         self, query: str, *, run_manager: CallbackManagerForRetrieverRun
     ) -> list[Document]:
         ensemble = EnsembleRetriever(
-            retrievers=[self.bm25_retriever, self.vector_retriever],
+            retrievers=[
+                _ChunkIdRetriever(inner=self.bm25_retriever),
+                _ChunkIdRetriever(inner=self.vector_retriever),
+            ],
             weights=[self.bm25_weight, 1 - self.bm25_weight],
             id_key="chunk_id",
         )

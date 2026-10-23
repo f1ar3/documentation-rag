@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,8 +15,8 @@ class Settings(BaseSettings):
     chunk_overlap: int = 200
     search_k: int = 5
     max_upload_mb: int = 20
-    retrieval_candidates: int = 10
-    bm25_weight: float = 0.5
+    retrieval_candidates: int = Field(10, ge=1)
+    bm25_weight: float = Field(0.5, ge=0, le=1)
 
     @property
     def chroma_dir(self) -> Path:
