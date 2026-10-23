@@ -4,6 +4,8 @@ from pathlib import Path
 from docx import Document
 from pypdf import PdfReader
 
+from app.ingestion import load_and_split
+
 SAMPLE = Path(__file__).resolve().parents[2] / "sample_docs"
 CYR = re.compile("[А-Яа-яЁё]")
 FILES = [
@@ -76,3 +78,13 @@ def test_facts_sections_are_real_headings():
             assert section in md_headings, section
             checked += 1
     assert checked >= 10
+
+
+def test_sample_docs_ingest():
+    for name in FILES:
+        chunks = load_and_split(SAMPLE / name, name, 1000, 200)
+        assert chunks, name
+        if name.endswith(".pdf"):
+            assert all(c.metadata["page"] >= 1 for c in chunks), name
+        if name in ("komandirovki.docx", "udalennaya-rabota.md"):
+            assert any(c.metadata["section"] for c in chunks), name
