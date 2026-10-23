@@ -129,3 +129,38 @@ def test_app_state_populated(client):
     assert client.app.state.store is not None
     assert client.app.state.agent is not None
     assert client.app.state.settings is not None
+
+
+def test_upload_too_long_name(client, keyed_settings):
+    resp = post(client, ("я" * 150 + ".txt", LONG.encode()))
+    assert resp.status_code == 400
+    assert "Слишком длинное имя файла" in resp.json()["detail"]
+    assert client.get("/api/documents").json() == {"documents": []}
+    assert uploads(keyed_settings) == []
+    assert [p.name for p in keyed_settings.data_dir.iterdir() if p.name not in ("uploads", "chroma", "checkpoints.sqlite")] == []
+
+
+def test_upload_name_control_chars_stripped(client, keyed_settings):
+    resp = post(client, ("a\tb.txt", LONG.encode()))
+    assert resp.status_code == 200
+    assert resp.json()["documents"][0]["name"] == "ab.txt"
+    assert uploads(keyed_settings) == ["ab.txt"]
+
+
+def test_upload_move_failure_rolls_back(client, keyed_settings, monkeypatch):
+    def boom(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("app.main.os.replace", boom)
+    resp = post(client, ("a.txt", LONG.encode()))
+    assert resp.status_code == 400
+    assert "Не удалось сохранить файл" in resp.json()["detail"]
+    assert client.get("/api/documents").json() == {"documents": []}
+    assert uploads(keyed_settings) == []
+
+
+def test_upload_without_key_503(tmp_settings):
+    with TestClient(create_app(tmp_settings)) as c:
+        resp = post(c, ("a.txt", b"abc"))
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "Не задан GOOGLE_API_KEY"

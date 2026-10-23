@@ -1,5 +1,7 @@
 import os
+import re
 import tempfile
+import unicodedata
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -16,7 +18,9 @@ from app.ingestion import SUPPORTED_EXTENSIONS, IngestionError, UnsupportedForma
 from app.vectorstore import DocumentStore
 
 NOT_CONFIGURED_DETAIL = "Не задан GOOGLE_API_KEY"
+_PCT_CONTROL_RE = re.compile(r"%[01][0-9A-Fa-f]")
 _CHUNK = 1024 * 1024
+MAX_NAME_BYTES = 200
 _REMOVED_NAME_CHARS = str.maketrans("", "", '"[]')
 
 
@@ -29,8 +33,11 @@ def require_configured(request: Request) -> None:
 def safe_file_name(filename: str | None) -> str:
     """Basename only; quotes and square brackets are removed (they would break citation labels)."""
     # Browsers and httpx percent-encode a double quote in multipart file names as %22.
-    name = Path((filename or "").replace("%22", '"').replace("\\", "/")).name
-    return name.translate(_REMOVED_NAME_CHARS).strip()
+    # Control characters arrive percent-encoded (%09, %0A, ...) from browsers and httpx.
+    filename = _PCT_CONTROL_RE.sub("", filename or "")
+    name = Path((filename).replace("%22", '"').replace("\\", "/")).name
+    name = name.translate(_REMOVED_NAME_CHARS)
+    return "".join(c for c in name if not unicodedata.category(c).startswith("C")).strip()
 
 
 def _read_limited(upload: UploadFile, limit: int) -> bytes | None:
@@ -52,6 +59,9 @@ def _ingest(request: Request, upload: UploadFile) -> dict[str, object]:
     if not name or suffix not in SUPPORTED_EXTENSIONS:
         raise HTTPException(400, str(UnsupportedFormatError(name or (upload.filename or ""))))
 
+    if len(name.encode("utf-8")) > MAX_NAME_BYTES:
+        raise HTTPException(400, f"Слишком длинное имя файла {name[:50]}...: максимум {MAX_NAME_BYTES} байт")
+
     data = _read_limited(upload, settings.max_upload_mb * 1024 * 1024)
     if data is None:
         raise HTTPException(413, f"Файл {name} больше {settings.max_upload_mb} МБ")
@@ -70,7 +80,14 @@ def _ingest(request: Request, upload: UploadFile) -> dict[str, object]:
         except Exception as exc:
             status, detail = classify_llm_error(exc)
             raise HTTPException(status, detail) from exc
-        os.replace(tmp_path, settings.uploads_dir / name)
+        try:
+            os.replace(tmp_path, settings.uploads_dir / name)
+        except OSError as exc:
+            try:
+                store.delete(name)
+            except Exception:
+                pass  # best effort: the user still gets a clean error below
+            raise HTTPException(400, f"Не удалось сохранить файл {name}") from exc
     return {"name": name, "chunks": count}
 
 

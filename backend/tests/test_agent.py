@@ -159,3 +159,9 @@ def test_scripted_runs_out_of_responses():
 def test_scripted_bind_tools_returns_self():
     model = ScriptedChatModel(responses=[])
     assert model.bind_tools([]) is model
+
+
+def test_system_prompt_requires_separate_brackets():
+    from app.agent import SYSTEM_PROMPT
+
+    assert "[a.pdf, стр. 2] [a.pdf, стр. 3]" in SYSTEM_PROMPT
