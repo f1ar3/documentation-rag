@@ -1,10 +1,20 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react'
+import type { ChatMessage } from '@/lib/types'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatHandlers } from '@/lib/api'
 import * as api from '@/lib/api'
 import { Chat } from './Chat'
-import { ChatProvider } from '@/state/chat'
+import { ChatProvider, useChat } from '@/state/chat'
+
+function NewChatButton() {
+  const { newChat } = useChat()
+  return (
+    <button type="button" onClick={newChat}>
+      test-new-chat
+    </button>
+  )
+}
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
@@ -44,9 +54,13 @@ async function renderAndAsk(question = 'Сколько дней отпуска?'
 
 describe('Chat', () => {
   it('streams tokens, turns a known label into a chip and disables send while streaming', async () => {
-    await renderAndAsk()
+    const user = await renderAndAsk()
+    // Non-empty text: the button is disabled only because a reply is streaming.
+    await user.type(screen.getByRole('textbox', { name: 'Сообщение' }), 'Следующий вопрос')
     expect(screen.getByRole('button', { name: 'Отправить' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Остановить' })).toBeInTheDocument()
+    await user.keyboard('{Enter}')
+    expect(streamChat).toHaveBeenCalledTimes(1)
 
     act(() => {
       handlers.onToken('28 дней ')
@@ -60,7 +74,7 @@ describe('Chat', () => {
       handlers.onDone()
     })
     const paragraph = (await screen.findByText(/28 дней/)).closest('p') as HTMLElement
-    expect(within(paragraph).getByRole('button', { name: 'a.pdf, стр. 1' })).toBeInTheDocument()
+    expect(within(paragraph).getByRole('button', { name: 'a.pdf · стр. 1' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Остановить' })).not.toBeInTheDocument()
   })
 
@@ -93,8 +107,8 @@ describe('Chat', () => {
       )
       handlers.onDone()
     })
-    expect(await screen.findAllByRole('button', { name: 'a.pdf, стр. 1' })).not.toHaveLength(0)
-    expect(screen.queryByRole('button', { name: 'b.pdf, стр. 9' })).not.toBeInTheDocument()
+    expect(await screen.findAllByRole('button', { name: 'a.pdf · стр. 1' })).not.toHaveLength(0)
+    expect(screen.queryByRole('button', { name: 'b.pdf · стр. 9' })).not.toBeInTheDocument()
     expect(screen.getByText(/\[b\.pdf, стр\. 9\]/)).toBeInTheDocument()
   })
 
@@ -107,8 +121,66 @@ describe('Chat', () => {
       )
       handlers.onDone()
     })
-    const chip = await screen.findAllByRole('button', { name: 'b.docx, «3. Суточные»' })
+    const chip = await screen.findAllByRole('button', { name: 'b.docx · «3. Суточные»' })
     expect(chip[0].closest('li')).not.toBeNull()
+  })
+
+  it('replaces the streamed text with the final answer from the sources event', async () => {
+    await renderAndAsk()
+    act(() => handlers.onToken('Сейчас поищу.'))
+    expect(await screen.findByText('Сейчас поищу.')).toBeInTheDocument()
+    act(() => {
+      handlers.onSources([{ source: 'a.pdf', page: 1, section: null }], 'Ответ [a.pdf, стр. 1].')
+      handlers.onDone()
+    })
+    const paragraph = (await screen.findByText(/^Ответ /)).closest('p') as HTMLElement
+    expect(paragraph).toHaveTextContent('Ответ a.pdf · стр. 1.')
+    expect(within(paragraph).getByRole('button', { name: 'a.pdf · стр. 1' })).toBeInTheDocument()
+    expect(screen.queryByText(/Сейчас поищу/)).not.toBeInTheDocument()
+  })
+
+  it('keeps the new question and answer when history arrives after a send', async () => {
+    let resolveHistory: (messages: ChatMessage[]) => void = () => {}
+    getHistory.mockReturnValue(new Promise((resolve) => (resolveHistory = resolve)))
+    const user = userEvent.setup()
+    render(
+      <ChatProvider>
+        <Chat />
+      </ChatProvider>,
+    )
+    await user.type(screen.getByRole('textbox', { name: 'Сообщение' }), 'Ранний вопрос{Enter}')
+    await waitFor(() => expect(streamChat).toHaveBeenCalled())
+    await act(async () => resolveHistory([{ role: 'user', content: 'Старый вопрос', sources: [] }]))
+    act(() => handlers.onToken('Свежий ответ'))
+    expect(await screen.findByText('Свежий ответ')).toBeInTheDocument()
+    expect(screen.getByText('Ранний вопрос')).toBeInTheDocument()
+  })
+
+  it('a new chat during a stream aborts it, resets busy and ignores late tokens', async () => {
+    const user = userEvent.setup()
+    render(
+      <ChatProvider>
+        <NewChatButton />
+        <Chat />
+      </ChatProvider>,
+    )
+    await waitFor(() => expect(getHistory).toHaveBeenCalled())
+    await user.type(screen.getByRole('textbox', { name: 'Сообщение' }), 'Вопрос{Enter}')
+    await waitFor(() => expect(streamChat).toHaveBeenCalled())
+    const oldHandlers = handlers
+    const oldSignal = signal
+    await user.click(screen.getByRole('button', { name: 'test-new-chat' }))
+    expect(oldSignal?.aborted).toBe(true)
+    act(() => {
+      oldHandlers.onToken('Поздний токен')
+      oldHandlers.onDone()
+    })
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.queryByText(/Поздний токен/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Вопрос')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Остановить' })).not.toBeInTheDocument()
+    await user.type(screen.getByRole('textbox', { name: 'Сообщение' }), 'Другой')
+    expect(screen.getByRole('button', { name: 'Отправить' })).toBeEnabled()
   })
 
   it('stop aborts the stream', async () => {

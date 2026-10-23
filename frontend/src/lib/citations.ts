@@ -29,8 +29,8 @@ export function splitCitations(text: string): CitationPart[] {
 }
 
 export function sourceLabel(src: Source): string {
-  if (src.page !== null) return `${src.source}, стр. ${src.page}`
-  if (src.section !== null) return `${src.source}, «${src.section}»`
+  if (src.page !== null) return `${src.source} · стр. ${src.page}`
+  if (src.section !== null) return `${src.source} · «${src.section}»`
   return src.source
 }
 

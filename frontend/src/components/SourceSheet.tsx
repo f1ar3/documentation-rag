@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { FileText } from 'lucide-react'
 import { sameSource, sourceLabel } from '@/lib/citations'
 import { cn } from '@/lib/utils'
@@ -22,9 +23,13 @@ export function SourceSheet({
   onSelect(source: Source): void
   onClose(): void
 }) {
-  const src = selection?.source
-  const sameFile = src
-    ? uniqueSources(selection.answerSources).filter((s) => s.source === src.source)
+  // Keep the last selection so the sheet does not slide out empty during its close animation
+  // (state adjusted during render, same idea as the delete dialog in Documents).
+  const [shown, setShown] = useState<SourceSelection | null>(selection)
+  if (selection !== null && selection !== shown) setShown(selection)
+  const src = shown?.source
+  const sameFile = shown
+    ? uniqueSources(shown.answerSources).filter((s) => s.source === shown.source.source)
     : []
 
   return (

@@ -15,7 +15,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
     uploadDocuments: vi.fn(),
   }
 })
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), loading: vi.fn(() => 'toast-1') } }))
 
 const listDocuments = vi.mocked(api.listDocuments)
 const deleteDocument = vi.mocked(api.deleteDocument)
@@ -86,6 +86,9 @@ describe('Documents', () => {
     await waitFor(() => expect(uploadDocuments).toHaveBeenCalledTimes(1))
     expect(uploadDocuments.mock.calls[0][0].map((f) => f.name)).toEqual(['c.txt'])
     expect(await screen.findByText('c.txt')).toBeInTheDocument()
+    // Visible feedback even when the sidebar is closed: a loading toast resolved in place.
+    expect(toast.loading).toHaveBeenCalledWith('Загружаю c.txt...')
+    expect(toast.success).toHaveBeenCalledWith(expect.stringContaining('c.txt'), { id: 'toast-1' })
   })
 
   it('shows an upload error from the server in a toast', async () => {
@@ -99,8 +102,11 @@ describe('Documents', () => {
       new File(['x'], 'scan.pdf'),
     ])
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith('Не удалось извлечь текст из scan.pdf'),
+      expect(toast.error).toHaveBeenCalledWith('Не удалось извлечь текст из scan.pdf', {
+        id: 'toast-1',
+      }),
     )
+    expect(toast.loading).toHaveBeenCalledWith('Загружаю scan.pdf...')
     await waitFor(() => expect(screen.queryByText('scan.pdf')).not.toBeInTheDocument())
   })
 })

@@ -76,22 +76,21 @@ export function DocumentsProvider({
     const pending = accepted.map((file) => ({ id: ++uploadSeq.current, name: file.name, file }))
     setUploads((prev) => [...prev, ...pending.map(({ id, name }) => ({ id, name }))])
 
-    const done: string[] = []
     // One request per file: each file gets its own progress row and its own error message.
+    // A toast per file keeps the progress visible when the sidebar is closed or collapsed.
     for (const item of pending) {
+      const toastId = toast.loading(`Загружаю ${item.name}...`)
       try {
         const result = await uploadDocuments([item.file])
         setDocuments((prev) => result.reduce(merge, prev ?? []))
         setLoadError(null)
-        done.push(item.name)
+        toast.success(`Документ «${item.name}» загружен`, { id: toastId })
       } catch (err) {
-        toast.error(errorText(err, `Не удалось загрузить ${item.name}`))
+        toast.error(errorText(err, `Не удалось загрузить ${item.name}`), { id: toastId })
       } finally {
         setUploads((prev) => prev.filter((u) => u.id !== item.id))
       }
     }
-    if (done.length === 1) toast.success(`Документ «${done[0]}» загружен`)
-    else if (done.length > 1) toast.success(`Загружено документов: ${done.length}`)
   }, [])
 
   const remove = useCallback(async (name: string) => {

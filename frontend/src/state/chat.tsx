@@ -73,13 +73,18 @@ export function ChatProvider({
   const [busy, setBusy] = useState(false)
   const [loadingHistory, setLoadingHistory] = useState(!initialMessages)
   const threadRef = useRef(threadId)
+  // Bumped by every history load, send and thread switch: a history response is applied only if
+  // nothing happened since its request started (otherwise it would wipe a just-sent question).
+  const generationRef = useRef(0)
   const abortRef = useRef<AbortController | null>(null)
 
   const loadHistory = useCallback((id: string) => {
+    const generation = ++generationRef.current
+    const isCurrent = () => generationRef.current === generation
     setLoadingHistory(true)
     getHistory(id)
       .then((history) => {
-        if (threadRef.current !== id) return
+        if (!isCurrent()) return
         setMessages(fromHistory(history))
         const firstQuestion = history.find((m) => m.role === 'user')
         if (firstQuestion && !loadThreads().some((t) => t.id === id)) {
@@ -87,7 +92,7 @@ export function ChatProvider({
         }
       })
       .catch((err: unknown) => {
-        if (threadRef.current !== id) return
+        if (!isCurrent()) return
         // Server-side and network failures (e.g. 503 without an API key) are shown by the
         // connection banner; only client-side problems get a toast here.
         if (err instanceof ApiError && (err.status === 0 || err.status >= 500)) return
@@ -96,7 +101,7 @@ export function ChatProvider({
         )
       })
       .finally(() => {
-        if (threadRef.current === id) setLoadingHistory(false)
+        if (isCurrent()) setLoadingHistory(false)
       })
   }, [])
 
@@ -108,6 +113,7 @@ export function ChatProvider({
   useEffect(() => () => abortRef.current?.abort(), [])
 
   const switchTo = useCallback((id: string) => {
+    generationRef.current += 1
     abortRef.current?.abort()
     abortRef.current = null
     threadRef.current = id
@@ -120,6 +126,9 @@ export function ChatProvider({
     const text = raw.trim()
     if (!text || abortRef.current) return
     const thread = threadRef.current
+    // A history request still in flight must not overwrite this exchange.
+    generationRef.current += 1
+    setLoadingHistory(false)
     setThreads(touchThread(thread, text))
 
     const assistantId = nextId()

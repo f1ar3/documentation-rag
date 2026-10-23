@@ -59,9 +59,9 @@ describe('splitCitations', () => {
 
 describe('sourceLabel', () => {
   it('formats the three kinds', () => {
-    expect(sourceLabel({ source: 'a.pdf', page: 2, section: null })).toBe('a.pdf, стр. 2')
+    expect(sourceLabel({ source: 'a.pdf', page: 2, section: null })).toBe('a.pdf · стр. 2')
     expect(sourceLabel({ source: 'b.docx', page: null, section: '3. Суточные' })).toBe(
-      'b.docx, «3. Суточные»',
+      'b.docx · «3. Суточные»',
     )
     expect(sourceLabel({ source: 'faq.txt', page: null, section: null })).toBe('faq.txt')
   })
