@@ -26,7 +26,7 @@ export function ThemeSwitch() {
             title={label}
             onClick={() => setTheme(value)}
             className={cn(
-              'flex size-7 items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+              'flex size-7 items-center justify-center rounded-md pointer-coarse:size-10 transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
               theme === value
                 ? 'bg-background text-foreground shadow-xs'
                 : 'text-muted-foreground hover:text-foreground',

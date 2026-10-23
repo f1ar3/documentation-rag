@@ -34,10 +34,10 @@ export function SourceSheet({
 
   return (
     <Sheet open={selection !== null} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="right" className="w-full gap-0 sm:max-w-md">
+      <SheetContent side="right" className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-md">
         {src && (
           <>
-            <SheetHeader className="border-b px-5 pt-5 pb-4 pr-12">
+            <SheetHeader className="border-b px-5 pt-5 pb-4 pr-14">
               <div className="flex items-start gap-3">
                 <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                   <FileText className="size-[18px]" aria-hidden />
@@ -67,7 +67,7 @@ export function SourceSheet({
                         aria-current={active || undefined}
                         onClick={() => onSelect(s)}
                         className={cn(
-                          'w-full rounded-lg px-3 py-2 text-left text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                          'w-full rounded-lg px-3 py-2 text-left text-sm pointer-coarse:py-3 transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
                           active
                             ? 'bg-brand-soft font-medium text-brand-text'
                             : 'text-foreground hover:bg-muted',

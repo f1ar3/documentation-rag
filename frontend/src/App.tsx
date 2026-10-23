@@ -74,7 +74,7 @@ function Shell() {
           inert={collapsed}
           aria-label="Боковая панель"
           className={cn(
-            'shrink-0 overflow-hidden border-r bg-sidebar transition-[width] duration-200 ease-out motion-reduce:transition-none',
+            'shrink-0 overflow-hidden border-r bg-sidebar transition-[width] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none',
             collapsed ? 'w-0 border-r-0' : 'w-[272px]',
           )}
         >
@@ -85,7 +85,7 @@ function Shell() {
       )}
       {!isDesktop && (
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-          <SheetContent side="left" showCloseButton={false} className="w-[86%] max-w-[300px] gap-0 border-r-0 p-0">
+          <SheetContent side="left" showCloseButton={false} className="gap-0 border-r-0 p-0 data-[side=left]:w-[86%] data-[side=left]:max-w-[300px]">
             <SheetTitle className="sr-only">Меню</SheetTitle>
             <Sidebar mode="mobile" onClose={() => setMobileOpen(false)} />
           </SheetContent>

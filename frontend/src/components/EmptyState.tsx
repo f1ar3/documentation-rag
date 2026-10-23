@@ -8,7 +8,7 @@ const EXAMPLE_QUESTIONS = [
 export function EmptyState({ onPick }: { onPick(question: string): void }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <div className="m-auto w-full max-w-[720px] px-4 py-10 animate-in fade-in-0 duration-200 motion-reduce:animate-none">
+      <div className="m-auto w-full max-w-[752px] px-4 py-10 animate-in fade-in-0 duration-200 motion-reduce:animate-none">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-[28px]">
           Чем могу помочь?
         </h1>

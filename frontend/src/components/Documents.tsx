@@ -47,7 +47,7 @@ export function Documents() {
 
   return (
     <section aria-labelledby="documents-heading" className="mt-6">
-      <div className="flex h-8 items-center justify-between pr-1 pl-2">
+      <div className="flex h-8 items-center justify-between pr-1 pl-2 pointer-coarse:h-11">
         <h2 id="documents-heading" className="text-xs font-medium text-muted-foreground">
           Документы{count > 0 && <span className="ml-1.5 tabular-nums">{count}</span>}
         </h2>
@@ -139,7 +139,7 @@ export function Documents() {
           <AlertDialogHeader>
             <AlertDialogTitle>Удалить документ?</AlertDialogTitle>
             <AlertDialogDescription>
-              «{deleteName}» будет удалён из базы. Бот перестанет опираться на него в ответах.
+              <span className="[overflow-wrap:anywhere]">«{deleteName}»</span> будет удалён из базы. Бот перестанет опираться на него в ответах.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

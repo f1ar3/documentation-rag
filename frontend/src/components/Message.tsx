@@ -16,13 +16,14 @@ function SourcesList({ sources, onOpen }: { sources: Source[]; onOpen(source: So
   return (
     <div className="mt-4">
       <h3 className="mb-2 text-xs font-medium text-muted-foreground">Источники</h3>
-      <ul className="flex flex-wrap gap-1.5" aria-label="Источники">
+      <ul className="flex flex-wrap gap-1.5 pointer-coarse:gap-y-3" aria-label="Источники">
         {sources.map((src) => (
           <li key={sourceLabel(src)} className="max-w-full">
             <button
               type="button"
               onClick={() => onOpen(src)}
-              className="inline-flex max-w-full items-center gap-1.5 rounded-full border bg-background px-2.5 py-1 text-xs text-foreground transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              title={sourceLabel(src)}
+              className="relative inline-flex max-w-full items-center gap-1.5 rounded-full border bg-background px-2.5 py-1 text-xs text-foreground transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2 pointer-coarse:after:inset-x-0 pointer-coarse:after:content-['']"
             >
               <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
               <span className="truncate">{sourceLabel(src)}</span>

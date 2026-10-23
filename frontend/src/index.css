@@ -146,6 +146,13 @@
   html.dark {
     color-scheme: dark;
   }
+  ::selection {
+    background: color-mix(in oklab, var(--brand) 22%, transparent);
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--muted-foreground) 35%, transparent) transparent;
+  }
   html,
   body,
   #root {

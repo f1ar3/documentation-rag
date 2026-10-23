@@ -81,7 +81,7 @@ export function MessageList({
           role="log"
           aria-busy={busy}
           aria-label="Переписка"
-          className="mx-auto flex w-full max-w-[720px] flex-col gap-7 px-4 pt-6 pb-10"
+          className="mx-auto flex w-full max-w-[752px] flex-col gap-7 px-4 pt-6 pb-10"
         >
           {messages.map((m) => (
             <MessageItem key={m.id} message={m} onOpenSource={onOpenSource} />
@@ -97,7 +97,7 @@ export function MessageList({
           scrollToBottom(true)
         }}
         className={cn(
-          'absolute bottom-3 left-1/2 flex size-9 -translate-x-1/2 items-center justify-center rounded-full border bg-background text-foreground shadow-md transition-[opacity,transform] duration-150 hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none',
+          'absolute bottom-3 left-1/2 flex size-9 -translate-x-1/2 items-center justify-center rounded-full border bg-background text-foreground shadow-md transition-[opacity,translate] duration-150 ease-out hover:bg-muted pointer-coarse:size-10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none',
           atBottom ? 'pointer-events-none translate-y-2 opacity-0' : 'opacity-100',
         )}
         aria-hidden={atBottom}

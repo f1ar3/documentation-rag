@@ -40,7 +40,7 @@ export function Sidebar({
             newChat()
             afterNavigate()
           }}
-          className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2 text-sm font-medium pointer-coarse:h-11 text-foreground transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
           <SquarePen className="size-4" aria-hidden />
           Новый чат
@@ -69,7 +69,7 @@ export function Sidebar({
                       }}
                       title={t.title}
                       className={cn(
-                        'flex h-9 w-full items-center rounded-lg pr-9 pl-2 text-left text-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                        'flex h-9 w-full items-center rounded-lg pr-9 pl-2 text-left text-sm pointer-coarse:h-11 pointer-coarse:pr-12 transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
                         active
                           ? 'bg-brand-soft font-medium text-brand-text'
                           : 'text-foreground hover:bg-muted',
@@ -81,7 +81,7 @@ export function Sidebar({
                       label="Убрать чат из списка"
                       side="right"
                       size="icon-xs"
-                      className="absolute top-1/2 right-1.5 -translate-y-1/2 text-muted-foreground hover:text-foreground focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+                      className="absolute top-1/2 right-1.5 -translate-y-1/2 pointer-coarse:right-0.5 text-muted-foreground hover:text-foreground focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
                       onClick={() => forgetThread(t.id)}
                     >
                       <X aria-hidden />
