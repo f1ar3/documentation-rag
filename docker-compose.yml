@@ -1,0 +1,31 @@
+services:
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      # Перекрывает DATA_DIR из .env: внутри контейнера данные всегда в /data
+      DATA_DIR: /data
+      # Пробрасываются из окружения оболочки, если заданы (иначе можно указать в .env)
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-backend,localhost,127.0.0.1}
+    volumes:
+      - rag-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  rag-data:
