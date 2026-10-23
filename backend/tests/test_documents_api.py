@@ -164,3 +164,19 @@ def test_upload_without_key_503(tmp_settings):
         resp = post(c, ("a.txt", b"abc"))
     assert resp.status_code == 503
     assert resp.json()["detail"] == "Не задан GOOGLE_API_KEY"
+
+
+def test_reupload_move_failure_keeps_previous_document(client, keyed_settings, monkeypatch):
+    assert post(client, ("a.txt", "старый текст".encode())).status_code == 200
+
+    def boom(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("app.main.os.replace", boom)
+    resp = post(client, ("a.txt", "новый текст".encode()))
+    assert resp.status_code == 400
+    assert "Не удалось сохранить файл" in resp.json()["detail"]
+    assert [d["name"] for d in client.get("/api/documents").json()["documents"]] == ["a.txt"]
+    assert (keyed_settings.uploads_dir / "a.txt").read_text(encoding="utf-8") == "старый текст"
+    hits = client.app.state.store.search("текст", 5)
+    assert hits and all("старый" in h.text for h in hits)

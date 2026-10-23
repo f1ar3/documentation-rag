@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import tempfile
@@ -16,6 +17,8 @@ from app.config import Settings
 from app.errors import classify_llm_error
 from app.ingestion import SUPPORTED_EXTENSIONS, IngestionError, UnsupportedFormatError, load_and_split
 from app.vectorstore import DocumentStore
+
+logger = logging.getLogger(__name__)
 
 NOT_CONFIGURED_DETAIL = "Не задан GOOGLE_API_KEY"
 _PCT_CONTROL_RE = re.compile(r"%[01][0-9A-Fa-f]")
@@ -50,6 +53,17 @@ def _read_limited(upload: UploadFile, limit: int) -> bytes | None:
     return bytes(data)
 
 
+def _rollback_index(settings: Settings, store: DocumentStore, name: str, final_path: Path, had_previous: bool) -> None:
+    """Best effort: make the index match the disk again after a failed move."""
+    try:
+        if had_previous:
+            store.add(name, load_and_split(final_path, name, settings.chunk_size, settings.chunk_overlap))
+        else:
+            store.delete(name)
+    except Exception:
+        logger.exception("Не удалось откатить индекс документа %s после ошибки сохранения файла", name)
+
+
 def _ingest(request: Request, upload: UploadFile) -> dict[str, object]:
     settings: Settings = request.app.state.settings
     store: DocumentStore = request.app.state.store
@@ -66,8 +80,11 @@ def _ingest(request: Request, upload: UploadFile) -> dict[str, object]:
     if data is None:
         raise HTTPException(413, f"Файл {name} больше {settings.max_upload_mb} МБ")
 
-    # Parse from a temporary file and move it into uploads only after the index is updated,
-    # so a failure never leaves a stray file and never destroys a previous copy of the document.
+    # Parse from a temporary file and move it into uploads only after the index is updated.
+    # A parse or embedding failure leaves the previous copy (file and index) untouched; if the final
+    # move fails, the index is rolled back to match what is on disk (removed, or rebuilt from the old file).
+    final_path = settings.uploads_dir / name
+    had_previous = final_path.exists()
     with tempfile.TemporaryDirectory(dir=settings.data_dir) as tmp:
         tmp_path = Path(tmp) / f"upload{suffix}"
         tmp_path.write_bytes(data)
@@ -81,12 +98,9 @@ def _ingest(request: Request, upload: UploadFile) -> dict[str, object]:
             status, detail = classify_llm_error(exc)
             raise HTTPException(status, detail) from exc
         try:
-            os.replace(tmp_path, settings.uploads_dir / name)
+            os.replace(tmp_path, final_path)
         except OSError as exc:
-            try:
-                store.delete(name)
-            except Exception:
-                pass  # best effort: the user still gets a clean error below
+            _rollback_index(settings, store, name, final_path, had_previous)
             raise HTTPException(400, f"Не удалось сохранить файл {name}") from exc
     return {"name": name, "chunks": count}
 
