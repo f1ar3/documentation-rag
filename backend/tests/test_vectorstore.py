@@ -76,3 +76,31 @@ def test_persists_between_instances(tmp_path: Path):
     emb = DeterministicFakeEmbedding(size=64)
     DocumentStore(tmp_path, emb).add("a.pdf", make_chunks("a.pdf", 2))
     assert DocumentStore(tmp_path, emb).list() == [DocumentInfo("a.pdf", 2)]
+
+
+class FailingEmbeddings(DeterministicFakeEmbedding):
+    def embed_documents(self, texts):
+        raise RuntimeError("embedding failed")
+
+
+def test_failed_readd_keeps_old_document(tmp_path: Path):
+    DocumentStore(tmp_path, DeterministicFakeEmbedding(size=64)).add(
+        "a.pdf", make_chunks("a.pdf", 3)
+    )
+    broken = DocumentStore(tmp_path, FailingEmbeddings(size=64))
+    with pytest.raises(RuntimeError):
+        broken.add("a.pdf", make_chunks("a.pdf", 2))
+    assert broken.list() == [DocumentInfo("a.pdf", 3)]
+
+
+def test_readd_fewer_chunks_removes_stale(store: DocumentStore):
+    store.add("a.pdf", make_chunks("a.pdf", 3))
+    new = [
+        Document(
+            page_content="Новый единственный текст",
+            metadata={"source": "a.pdf", "page": 1, "section": None, "chunk_index": 0},
+        )
+    ]
+    store.add("a.pdf", new)
+    assert store.list() == [DocumentInfo("a.pdf", 1)]
+    assert [h.text for h in store.search("текст", k=5)] == ["Новый единственный текст"]

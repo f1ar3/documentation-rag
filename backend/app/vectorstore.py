@@ -40,8 +40,8 @@ class DocumentStore:
         )
 
     def add(self, source_name: str, chunks: list[Document]) -> int:
-        self.delete(source_name)
         if not chunks:
+            self.delete(source_name)
             return 0
         docs: list[Document] = []
         ids: list[str] = []
@@ -52,7 +52,11 @@ class DocumentStore:
             meta["section"] = meta.get("section") or ""
             docs.append(Document(page_content=chunk.page_content, metadata=meta))
             ids.append(f"{source_name}::{meta['chunk_index']}")
+        # add_documents upserts on existing ids; old copy survives if embedding fails
         self._store.add_documents(docs, ids=ids)
+        stale = set(self._source_ids(source_name)) - set(ids)
+        if stale:
+            self._store.delete(ids=list(stale))
         return len(docs)
 
     def list(self) -> list[DocumentInfo]:
@@ -60,8 +64,11 @@ class DocumentStore:
         counts = Counter(m["source"] for m in metadatas)
         return [DocumentInfo(name, counts[name]) for name in sorted(counts)]
 
+    def _source_ids(self, source_name: str) -> list[str]:
+        return self._store.get(where={"source": source_name}, include=[])["ids"]
+
     def delete(self, source_name: str) -> bool:
-        ids = self._store.get(where={"source": source_name}, include=[])["ids"]
+        ids = self._source_ids(source_name)
         if not ids:
             return False
         self._store.delete(ids=ids)
