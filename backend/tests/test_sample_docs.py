@@ -53,3 +53,26 @@ def test_no_dashes_and_facts_file():
         if p.suffix in (".md", ".txt"):
             t = p.read_text(encoding="utf-8")
             assert "—" not in t and "–" not in t, name
+
+
+def test_facts_sections_are_real_headings():
+    doc = Document(str(SAMPLE / "komandirovki.docx"))
+    docx_headings = {p.text.strip() for p in doc.paragraphs if p.style.name.startswith("Heading")}
+    md_headings = {
+        l.lstrip("#").strip()
+        for l in (SAMPLE / "udalennaya-rabota.md").read_text(encoding="utf-8").splitlines()
+        if l.startswith("#")
+    }
+    checked = 0
+    for line in (SAMPLE / "FACTS.md").read_text(encoding="utf-8").splitlines():
+        if not line.startswith("| ") or line.startswith("| №"):
+            continue
+        cols = [c.strip() for c in line.strip("|").split("|")]
+        fname, section = cols[3], cols[4]
+        if fname == "komandirovki.docx":
+            assert section in docx_headings, section
+            checked += 1
+        elif fname == "udalennaya-rabota.md":
+            assert section in md_headings, section
+            checked += 1
+    assert checked >= 10
