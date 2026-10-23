@@ -1,0 +1,23 @@
+# Design docs and plans (local only)
+docs/superpowers/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Secrets
+.env
+
+# Local data (Chroma, SQLite, uploaded PDFs)
+data/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+
+# Subagent workspace
+.superpowers/
