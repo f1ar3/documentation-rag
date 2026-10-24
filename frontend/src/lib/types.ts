@@ -7,3 +7,11 @@ export type ChatMessage = {
   content: string
   sources: Source[]
 }
+
+export type DocumentPart = { page: number | null; section: string | null; text: string }
+
+export type DocumentContent = {
+  name: string
+  format: 'pdf' | 'docx' | 'md' | 'txt'
+  parts: DocumentPart[]
+}

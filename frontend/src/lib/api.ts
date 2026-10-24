@@ -1,5 +1,5 @@
 import { createSSEParser } from './sse'
-import type { ChatMessage, DocumentInfo, Source } from './types'
+import type { ChatMessage, DocumentContent, DocumentInfo, Source } from './types'
 
 export class ApiError extends Error {
   status: number
@@ -66,6 +66,16 @@ export async function uploadDocuments(files: File[]): Promise<DocumentInfo[]> {
 
 export async function deleteDocument(name: string): Promise<void> {
   await request(`/api/documents/${encodeURIComponent(name)}`, { method: 'DELETE' })
+}
+
+export async function getDocumentContent(name: string): Promise<DocumentContent> {
+  const response = await request(`/api/documents/${encodeURIComponent(name)}/content`)
+  return (await response.json()) as DocumentContent
+}
+
+/** The original file: PDF opens in the browser, other formats are downloaded. */
+export function documentFileUrl(name: string): string {
+  return `/api/documents/${encodeURIComponent(name)}/file`
 }
 
 export async function getHistory(threadId: string): Promise<ChatMessage[]> {

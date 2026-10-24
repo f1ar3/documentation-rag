@@ -1,4 +1,5 @@
 import unicodedata
+from urllib.parse import quote
 
 from langchain_core.embeddings import DeterministicFakeEmbedding
 from fastapi.testclient import TestClient
@@ -193,3 +194,128 @@ def test_upload_nfd_name_normalized_to_nfc(client, keyed_settings):
     assert resp.json()["documents"][0]["name"] == nfc
     assert uploads(keyed_settings) == [nfc]
     assert [d["name"] for d in client.get("/api/documents").json()["documents"]] == [nfc]
+
+
+def test_document_content_endpoint(client, tmp_path):
+    pdf = make_pdf(tmp_path / "a.pdf", [LONG, "Вторая страница."])
+    docx = make_docx(tmp_path / "b.docx", [("h1", "1. Отпуск"), ("p", LONG), ("h1", "2. Командировки"), ("p", "Суточные.")])
+    assert post(client, ("a.pdf", pdf.read_bytes()), ("Положение.docx", docx.read_bytes())).status_code == 200
+
+    resp = client.get("/api/documents/a.pdf/content")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["name"] == "a.pdf"
+    assert body["format"] == "pdf"
+    assert [p["page"] for p in body["parts"]] == [1, 2]
+    assert body["parts"][0]["section"] is None
+    assert "двадцать восемь" in body["parts"][0]["text"]
+
+    resp = client.get(f"/api/documents/{quote('Положение.docx')}/content")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["format"] == "docx"
+    assert [p["section"] for p in body["parts"]] == ["1. Отпуск", "2. Командировки"]
+    assert all(p["page"] is None for p in body["parts"])
+    assert body["parts"][1]["text"] == "Суточные."
+
+
+def test_document_content_md_and_txt(client):
+    assert post(client, ("c.md", "# Заголовок\nТекст **жирный**.\n".encode()), ("d.txt", "Строка\nещё".encode())).status_code == 200
+    md = client.get("/api/documents/c.md/content").json()
+    assert md["format"] == "md"
+    assert md["parts"] == [{"page": None, "section": "Заголовок", "text": "Текст **жирный**."}]
+    txt = client.get("/api/documents/d.txt/content").json()
+    assert txt["format"] == "txt"
+    assert txt["parts"] == [{"page": None, "section": None, "text": "Строка\nещё"}]
+
+
+def test_document_content_nfd_name(client):
+    nfc = "Отчёт.txt"
+    assert post(client, (nfc, LONG.encode())).status_code == 200
+    resp = client.get(f"/api/documents/{quote(unicodedata.normalize('NFD', nfc))}/content")
+    assert resp.status_code == 200
+    assert resp.json()["name"] == nfc
+
+
+def test_document_content_unknown_404(client):
+    resp = client.get("/api/documents/nope.pdf/content")
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Документ nope.pdf не найден"
+
+
+def test_document_content_file_missing_on_disk_404(client, keyed_settings):
+    assert post(client, ("a.txt", LONG.encode())).status_code == 200
+    (keyed_settings.uploads_dir / "a.txt").unlink()
+    resp = client.get("/api/documents/a.txt/content")
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Документ a.txt не найден"
+    assert client.get("/api/documents/a.txt/file").status_code == 404
+
+
+def test_document_content_not_indexed_file_404(client, keyed_settings):
+    (keyed_settings.uploads_dir / "stray.txt").write_text(LONG, encoding="utf-8")
+    assert client.get("/api/documents/stray.txt/content").status_code == 404
+    assert client.get("/api/documents/stray.txt/file").status_code == 404
+
+
+def test_document_content_traversal_404(client, keyed_settings):
+    (keyed_settings.data_dir / "secret.txt").write_text("секрет", encoding="utf-8")
+    for path in ("..%2F..%2Fetc%2Fpasswd", "..%2Fsecret.txt", "%2E%2E"):
+        for kind in ("content", "file"):
+            resp = client.get(f"/api/documents/{path}/{kind}")
+            assert resp.status_code == 404, (path, kind)
+            assert "секрет" not in resp.text
+
+
+def test_document_content_ingestion_error_422(client, keyed_settings):
+    assert post(client, ("a.txt", LONG.encode())).status_code == 200
+    (keyed_settings.uploads_dir / "a.txt").write_bytes(b"")
+    resp = client.get("/api/documents/a.txt/content")
+    assert resp.status_code == 422
+    assert "Не удалось извлечь текст из a.txt" in resp.json()["detail"]
+
+
+def test_document_content_without_key_503(tmp_settings):
+    with TestClient(create_app(tmp_settings)) as c:
+        for kind in ("content", "file"):
+            resp = c.get(f"/api/documents/a.txt/{kind}")
+            assert resp.status_code == 503
+            assert resp.json()["detail"] == "Не задан GOOGLE_API_KEY"
+
+
+def test_document_file_pdf_inline(client, tmp_path):
+    pdf = make_pdf(tmp_path / "a.pdf", [LONG])
+    assert post(client, ("a.pdf", pdf.read_bytes())).status_code == 200
+    resp = client.get("/api/documents/a.pdf/file")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.headers["content-disposition"].startswith("inline")
+    assert resp.content == pdf.read_bytes()
+
+
+def test_document_file_docx_attachment(client, tmp_path):
+    docx = make_docx(tmp_path / "b.docx", [("p", LONG)])
+    assert post(client, ("b.docx", docx.read_bytes())).status_code == 200
+    resp = client.get("/api/documents/b.docx/file")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    assert resp.headers["content-disposition"].startswith("attachment")
+
+
+def test_document_file_md_type(client):
+    assert post(client, ("c.md", ("# Т\n" + LONG).encode())).status_code == 200
+    resp = client.get("/api/documents/c.md/file")
+    assert resp.headers["content-type"] == "text/markdown; charset=utf-8"
+    assert resp.headers["content-disposition"].startswith("attachment")
+
+
+def test_document_file_txt_attachment_cyrillic(client):
+    name = "Вопросы и ответы.txt"
+    assert post(client, (name, LONG.encode())).status_code == 200
+    resp = client.get(f"/api/documents/{quote(name)}/file")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "text/plain; charset=utf-8"
+    disposition = resp.headers["content-disposition"]
+    assert disposition.startswith("attachment")
+    assert f"filename*=UTF-8''{quote(name)}" in disposition
+    assert resp.content == LONG.encode()

@@ -1,6 +1,6 @@
 import pytest
 
-from app.ingestion import IngestionError, UnsupportedFormatError, load_and_split
+from app.ingestion import DocumentPart, IngestionError, UnsupportedFormatError, extract_parts, load_and_split
 from tests.fakes import make_docx, make_pdf
 
 SIZE, OVERLAP = 1000, 200
@@ -148,3 +148,74 @@ def test_empty_inputs_raise(tmp_path, build):
         split(p)
     assert p.name in str(e.value)
     assert "Не удалось извлечь текст" in str(e.value)
+
+
+def _ex_pdf(tmp_path):
+    p = make_pdf(tmp_path / "a.pdf", ["Первая страница.", "Вторая страница."])
+    return p, [DocumentPart(page=1, section=None, text="Первая страница."), DocumentPart(page=2, section=None, text="Вторая страница.")]
+
+
+def _ex_docx(tmp_path):
+    p = make_docx(
+        tmp_path / "b.docx",
+        [
+            ("p", "Вступление."),
+            ("h1", "1. Общие положения"),
+            ("p", "Текст."),
+            ("h1", "3. Суточные"),
+            ("table", "Город|Сумма;Москва|1500 руб."),
+        ],
+    )
+    return p, [
+        DocumentPart(page=None, section=None, text="Вступление."),
+        DocumentPart(page=None, section="1. Общие положения", text="Текст."),
+        DocumentPart(page=None, section="3. Суточные", text="Город | Сумма\nМосква | 1500 руб."),
+    ]
+
+
+def _ex_md(tmp_path):
+    p = tmp_path / "c.md"
+    p.write_text("# Удалёнка\nКратко.\n## Оборудование\nНоутбук **выдаётся**.\n", encoding="utf-8")
+    return p, [
+        DocumentPart(page=None, section="Удалёнка", text="Кратко."),
+        DocumentPart(page=None, section="Оборудование", text="Ноутбук **выдаётся**."),
+    ]
+
+
+def _ex_txt(tmp_path):
+    p = tmp_path / "d.txt"
+    p.write_text("Строка 1\n\nСтрока 2\n", encoding="utf-8")
+    return p, [DocumentPart(page=None, section=None, text="Строка 1\n\nСтрока 2\n")]
+
+
+@pytest.mark.parametrize("build", [_ex_pdf, _ex_docx, _ex_md, _ex_txt])
+def test_extract_parts_formats(tmp_path, build):
+    path, expected = build(tmp_path)
+    parts = extract_parts(path, path.name)
+    assert [(p.page, p.section) for p in parts] == [(e.page, e.section) for e in expected]
+    assert [p.text.strip() for p in parts] == [e.text.strip() for e in expected]
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        _pdf_blank,
+        _raw("bad.pdf", b"not a pdf"),
+        _raw("bad.docx", b"garbage"),
+        _raw("empty.txt", b""),
+        _raw("bin.txt", b"\x00\x01"),
+        _raw("empty.md", b"  \n"),
+    ],
+)
+def test_extract_parts_empty_inputs_raise(tmp_path, build):
+    p = build(tmp_path)
+    with pytest.raises(IngestionError) as e:
+        extract_parts(p, p.name)
+    assert "Не удалось извлечь текст" in str(e.value)
+
+
+def test_extract_parts_unsupported(tmp_path):
+    p = tmp_path / "notes.doc"
+    p.write_bytes(b"x")
+    with pytest.raises(UnsupportedFormatError):
+        extract_parts(p, p.name)

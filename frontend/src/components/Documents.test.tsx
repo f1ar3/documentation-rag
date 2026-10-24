@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '@/lib/api'
 import { Documents } from './Documents'
 import { DocumentsProvider } from '@/state/documents'
+import { ViewerProvider } from '@/state/viewer'
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
@@ -12,6 +13,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
     ...actual,
     listDocuments: vi.fn(),
     deleteDocument: vi.fn(),
+    getDocumentContent: vi.fn(),
     uploadDocuments: vi.fn(),
   }
 })
@@ -23,9 +25,11 @@ const uploadDocuments = vi.mocked(api.uploadDocuments)
 
 function renderDocs() {
   return render(
-    <DocumentsProvider>
-      <Documents />
-    </DocumentsProvider>,
+    <ViewerProvider>
+      <DocumentsProvider>
+        <Documents />
+      </DocumentsProvider>
+    </ViewerProvider>,
   )
 }
 
@@ -39,6 +43,29 @@ beforeEach(() => {
 })
 
 describe('Documents', () => {
+  it('opens the viewer on a row click, but not on the delete button', async () => {
+    vi.mocked(api.getDocumentContent).mockResolvedValue({
+      name: 'a.pdf',
+      format: 'pdf',
+      parts: [{ page: 1, section: null, text: 'Текст первой страницы' }],
+    })
+    const user = userEvent.setup()
+    renderDocs()
+    await screen.findByText('a.pdf')
+
+    await user.click(screen.getByRole('button', { name: 'Удалить a.pdf' }))
+    await screen.findByRole('alertdialog')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(api.getDocumentContent).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Отмена' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+
+    await user.click(screen.getByRole('button', { name: 'Открыть a.pdf' }))
+    const viewer = await screen.findByRole('dialog')
+    expect(api.getDocumentContent).toHaveBeenCalledWith('a.pdf')
+    expect(await within(viewer).findByText('Текст первой страницы')).toBeInTheDocument()
+  })
+
   it('deletes a document after confirmation', async () => {
     const user = userEvent.setup()
     renderDocs()
