@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ApiError,
   deleteDocument,
+  documentFileUrl,
+  getDocumentContent,
   getHistory,
   listDocuments,
   streamChat,
@@ -163,6 +165,36 @@ describe('streamChat', () => {
 })
 
 describe('REST helpers', () => {
+  it('getDocumentContent encodes the name and returns the content', async () => {
+    const content = {
+      name: 'Положение #1?.pdf',
+      format: 'pdf',
+      parts: [{ page: 1, section: null, text: 'Текст' }],
+    }
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(content))
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await getDocumentContent('Положение #1?.pdf')).toEqual(content)
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      `/api/documents/${encodeURIComponent('Положение #1?.pdf')}/content`,
+    )
+    expect(fetchMock.mock.calls[0][0]).toContain('%23')
+  })
+
+  it('getDocumentContent throws ApiError with the server text on 404', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse({ detail: 'Документ a.pdf не найден' }, 404)),
+    )
+    const err = await getDocumentContent('a.pdf').catch((e) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err.status).toBe(404)
+    expect(err.message).toBe('Документ a.pdf не найден')
+  })
+
+  it('documentFileUrl encodes the name', () => {
+    expect(documentFileUrl('a b/в.txt')).toBe(`/api/documents/${encodeURIComponent('a b/в.txt')}/file`)
+  })
+
   it('listDocuments returns the documents array', async () => {
     vi.stubGlobal(
       'fetch',

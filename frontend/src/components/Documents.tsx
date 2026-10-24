@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { ACCEPTED_EXTENSIONS } from '@/lib/files'
 import { useDocuments } from '@/state/documents'
+import { useDocumentViewer } from '@/state/viewer'
 import { IconButton } from './IconButton'
 
 function chunksLabel(n: number): string {
@@ -22,8 +23,14 @@ function chunksLabel(n: number): string {
   return `${n} фрагментов`
 }
 
-export function Documents() {
+export function Documents({
+  onOpenDocument,
+}: {
+  /** Called after a document is opened in the viewer (the phone layout closes its menu). */
+  onOpenDocument?(): void
+} = {}) {
   const { documents, uploads, upload, remove } = useDocuments()
+  const viewer = useDocumentViewer()
   const fileRef = useRef<HTMLInputElement>(null)
   // The name outlives `confirmOpen` so the dialog text stays intact during its close animation.
   const [deleteName, setDeleteName] = useState('')
@@ -93,15 +100,24 @@ export function Documents() {
         {documents?.map((doc) => (
           <li
             key={doc.name}
-            className="group flex items-center gap-2 rounded-lg py-1 pr-1 pl-2 transition-colors hover:bg-muted"
+            className="group flex items-center gap-1 rounded-lg pr-1 transition-colors hover:bg-muted"
           >
-            <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm text-foreground" title={doc.name}>
-                {doc.name}
+            <button
+              type="button"
+              aria-label={`Открыть ${doc.name}`}
+              title={doc.name}
+              onClick={() => {
+                viewer.open(doc.name)
+                onOpenDocument?.()
+              }}
+              className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 pl-2 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:py-1.5"
+            >
+              <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm text-foreground">{doc.name}</div>
+                <div className="text-xs text-muted-foreground">{chunksLabel(doc.chunks)}</div>
               </div>
-              <div className="text-xs text-muted-foreground">{chunksLabel(doc.chunks)}</div>
-            </div>
+            </button>
             <IconButton
               label={`Удалить ${doc.name}`}
               side="right"

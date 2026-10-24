@@ -1,26 +1,29 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import type { Source } from '@/lib/types'
 import { useChat } from '@/state/chat'
+import { useDocumentViewer } from '@/state/viewer'
 import { Composer } from './Composer'
 import { EmptyState } from './EmptyState'
 import { MessageList } from './MessageList'
-import { SourceSheet } from './SourceSheet'
 
-/** Conversation pane: feed (or empty state), composer and the source sheet. */
+/** Conversation pane: feed (or empty state) and composer. Citations open the document viewer. */
 export function Chat() {
   const { messages, busy, loadingHistory, send } = useChat()
-  const [selected, setSelected] = useState<{ messageId: string; source: Source } | null>(null)
+  const viewer = useDocumentViewer()
+
+  // Read through a ref: a stable callback keeps memoized messages from re-rendering while a reply streams.
+  const messagesRef = useRef(messages)
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
 
   const openSource = useCallback(
-    (messageId: string, source: Source) => setSelected({ messageId, source }),
-    [],
+    (messageId: string, source: Source) => {
+      const message = messagesRef.current.find((m) => m.id === messageId)
+      viewer.open(source.source, { target: source, refs: message?.sources ?? [source] })
+    },
+    [viewer],
   )
-
-  const selection = useMemo(() => {
-    if (!selected) return null
-    const message = messages.find((m) => m.id === selected.messageId)
-    return message ? { source: selected.source, answerSources: message.sources } : null
-  }, [selected, messages])
 
   const empty = messages.length === 0
 
@@ -30,11 +33,6 @@ export function Chat() {
       {empty && loadingHistory && <div className="flex-1" aria-busy="true" />}
       {!empty && <MessageList messages={messages} busy={busy} onOpenSource={openSource} />}
       <Composer />
-      <SourceSheet
-        selection={selection}
-        onSelect={(source) => setSelected((prev) => (prev ? { ...prev, source } : prev))}
-        onClose={() => setSelected(null)}
-      />
     </div>
   )
 }

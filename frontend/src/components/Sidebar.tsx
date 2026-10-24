@@ -92,7 +92,7 @@ export function Sidebar({
             </ul>
           )}
         </section>
-        <Documents />
+        <Documents onOpenDocument={afterNavigate} />
       </nav>
 
       <div className="shrink-0 border-t px-2 py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">

@@ -10,10 +10,12 @@ import { Sidebar } from '@/components/Sidebar'
 import { useWindowFileDrop } from '@/hooks/use-file-drop'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { cn } from '@/lib/utils'
-import type { DocumentInfo } from '@/lib/types'
+import type { DocumentContent, DocumentInfo } from '@/lib/types'
 import { ChatProvider, useChat } from '@/state/chat'
 import type { UiMessage } from '@/state/chat'
 import { DocumentsProvider, useDocuments } from '@/state/documents'
+import { ViewerProvider } from '@/state/viewer'
+import type { OpenDocumentOptions } from '@/state/viewer'
 
 const SIDEBAR_KEY = 'rag.sidebar'
 
@@ -135,15 +137,22 @@ export default function App({
   demo,
 }: {
   /** Dev-only mock data (`?demo=1`), never passed in production. */
-  demo?: { messages: UiMessage[]; documents: DocumentInfo[] }
+  demo?: {
+    messages: UiMessage[]
+    documents: DocumentInfo[]
+    loadDocument?: (name: string) => Promise<DocumentContent>
+    view?: { name: string } & OpenDocumentOptions
+  }
 }) {
   return (
     <TooltipProvider delay={500}>
-      <DocumentsProvider initialDocuments={demo?.documents}>
-        <ChatProvider initialMessages={demo?.messages}>
-          <Shell />
-        </ChatProvider>
-      </DocumentsProvider>
+      <ViewerProvider load={demo?.loadDocument} initial={demo?.view}>
+        <DocumentsProvider initialDocuments={demo?.documents}>
+          <ChatProvider initialMessages={demo?.messages}>
+            <Shell />
+          </ChatProvider>
+        </DocumentsProvider>
+      </ViewerProvider>
     </TooltipProvider>
   )
 }

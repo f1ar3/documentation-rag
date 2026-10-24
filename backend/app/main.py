@@ -8,8 +8,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response, UploadFile
+from fastapi.responses import FileResponse
 from fastapi import Path as FastAPIPath
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel
@@ -21,7 +23,13 @@ from app.agent import build_agent
 from app.chat import get_history, stream_answer
 from app.config import Settings
 from app.errors import classify_llm_error
-from app.ingestion import SUPPORTED_EXTENSIONS, IngestionError, UnsupportedFormatError, load_and_split
+from app.ingestion import (
+    SUPPORTED_EXTENSIONS,
+    IngestionError,
+    UnsupportedFormatError,
+    extract_parts,
+    load_and_split,
+)
 from app.vectorstore import DocumentStore
 
 logger = logging.getLogger(__name__)
@@ -31,6 +39,12 @@ _PCT_CONTROL_RE = re.compile(r"%[01][0-9A-Fa-f]")
 _CHUNK = 1024 * 1024
 MAX_NAME_BYTES = 200
 _REMOVED_NAME_CHARS = str.maketrans("", "", '"[]')
+_MEDIA_TYPES = {
+    ".pdf": "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".md": "text/markdown; charset=utf-8",
+    ".txt": "text/plain; charset=utf-8",
+}
 
 
 class ChatRequest(BaseModel):
@@ -130,6 +144,44 @@ def _ingest(request: Request, upload: UploadFile) -> dict[str, object]:
     return {"name": name, "chunks": count}
 
 
+def _stored_document(request: Request, raw_name: str) -> tuple[str, Path]:
+    """Name and path of an indexed document whose original is in uploads; 404 otherwise.
+
+    The name is normalized the same way as on upload, so links built from NFD names still work."""
+    settings: Settings = request.app.state.settings
+    name = safe_file_name(raw_name)
+    uploads = settings.uploads_dir.resolve()
+    path = (uploads / name).resolve() if name else uploads
+    known = name and name in {d.name for d in request.app.state.store.list()}
+    if not known or path.parent != uploads or not path.is_file():
+        raise HTTPException(404, f"Документ {name or raw_name} не найден")
+    return name, path
+
+
+def _document_content(request: Request, raw_name: str) -> dict[str, object]:
+    name, path = _stored_document(request, raw_name)
+    try:
+        parts = extract_parts(path, name)
+    except IngestionError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {
+        "name": name,
+        "format": Path(name).suffix.lower().lstrip("."),
+        "parts": [{"page": p.page, "section": p.section, "text": p.text} for p in parts],
+    }
+
+
+def _document_file(request: Request, raw_name: str) -> FileResponse:
+    name, path = _stored_document(request, raw_name)
+    suffix = Path(name).suffix.lower()
+    disposition = "inline" if suffix == ".pdf" else "attachment"
+    return FileResponse(
+        path,
+        media_type=_MEDIA_TYPES[suffix],
+        headers={"Content-Disposition": f"{disposition}; filename*=UTF-8''{quote(name, safe='')}"},
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
@@ -203,6 +255,14 @@ def create_app(
             raise HTTPException(404, f"Документ {name} не найден")
         (request.app.state.settings.uploads_dir / Path(name).name).unlink(missing_ok=True)
         return Response(status_code=204)
+
+    @api.get("/documents/{name}/content")
+    def document_content(request: Request, name: str) -> dict[str, object]:
+        return _document_content(request, name)
+
+    @api.get("/documents/{name}/file")
+    def document_file(request: Request, name: str) -> FileResponse:
+        return _document_file(request, name)
 
     @api.post("/chat")
     async def chat(request: Request, body: ChatRequest) -> EventSourceResponse:
