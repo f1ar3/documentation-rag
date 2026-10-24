@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import TypedDict
 
-from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 
 SEARCH_TOOL_NAME = "search_documents"
 
@@ -51,10 +51,14 @@ def extract_sources(answer: str, found: list[Source]) -> list[Source]:
 
 
 def found_sources_for_turn(messages: list[BaseMessage]) -> list[Source]:
-    """Union of search_documents artifacts after the last HumanMessage."""
+    """Union of search_documents artifacts since the previous finished answer.
+
+    `messages` ends with the answer being checked (or before it). Searches of an unfinished turn (failed or
+    cancelled after the search) count too: the model may answer a repeated question from those results.
+    """
     start = 0
-    for i, msg in enumerate(messages):
-        if isinstance(msg, HumanMessage):
+    for i, msg in enumerate(messages[:-1]):
+        if isinstance(msg, AIMessage) and not msg.tool_calls:
             start = i + 1
     result: list[Source] = []
     for msg in messages[start:]:

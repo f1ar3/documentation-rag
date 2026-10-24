@@ -165,3 +165,12 @@ def test_system_prompt_requires_separate_brackets():
     from app.agent import SYSTEM_PROMPT
 
     assert "[a.pdf, стр. 2] [a.pdf, стр. 3]" in SYSTEM_PROMPT
+
+
+def test_system_prompt_requires_search_for_follow_ups_and_no_dashes_in_answers():
+    # Real Gemini answered a follow-up from history without searching, so its label was dropped (sources == []),
+    # and wrote em dashes in answers.
+    from app.agent import SYSTEM_PROMPT
+
+    assert "в том числе для уточняющих вопросов" in SYSTEM_PROMPT
+    assert "Не используй длинные и средние тире" in SYSTEM_PROMPT
