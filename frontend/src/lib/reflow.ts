@@ -1,5 +1,8 @@
-// A line that starts a new block: a numbered clause ("2.", "3.1.", "4.2)") or a list marker.
-const BLOCK_START = /^(\d+(\.\d+)*[.)]\s|[-•*–]\s)/
+// A line that starts a new block: a numbered clause ("2.", "3.1.", "4.2)"), a lettered one ("а) ", "a) ")
+// or a list marker.
+const BLOCK_START = /^(\d+(\.\d+)*[.)]\s|[A-Za-zА-Яа-яЁё]\)\s|[-•*–]\s)/
+const HYPHEN_BREAK = /[A-Za-zА-Яа-яЁё]-$/
+const LOWERCASE_START = /^[a-zа-яё]/
 const SENTENCE_END = /[.!?:;]$/
 const CAPITAL_OR_DIGIT = /^[A-ZА-ЯЁ0-9«"]/
 
@@ -19,6 +22,8 @@ export function reflowPdfText(text: string): string {
       BLOCK_START.test(line) ||
       (SENTENCE_END.test(prev) && CAPITAL_OR_DIGIT.test(line))
     if (startsBlock) out.push(line)
+    else if (HYPHEN_BREAK.test(prev) && LOWERCASE_START.test(line.trimStart()))
+      out[out.length - 1] = `${prev.slice(0, -1)}${line.trimStart()}`
     else out[out.length - 1] = `${prev} ${line.trimStart()}`
   }
   return out.join('\n')

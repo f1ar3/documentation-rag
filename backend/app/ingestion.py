@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -106,7 +107,7 @@ def _md_heading(line: str) -> str | None:
     stripped = line.strip()
     for mark in _MD_HEADING_MARKS:
         if stripped.startswith(mark) or stripped == mark.strip():
-            return stripped[len(mark):].strip()
+            return re.sub(r"(^|\s)#+$", "", stripped[len(mark):].strip()).strip()
     return None
 
 
@@ -133,8 +134,10 @@ def _read_md(path: Path, source_name: str) -> list[DocumentPart]:
         if fence is None:
             heading = _md_heading(line)
             if heading is not None:
-                flush()
-                section = normalize_heading(heading) or None
+                title = normalize_heading(heading)
+                if title:  # an empty heading does not open a new section
+                    flush()
+                    section = title
                 continue
             fence = next((f for f in _MD_FENCES if stripped.startswith(f)), None)
         elif stripped.startswith(fence):
