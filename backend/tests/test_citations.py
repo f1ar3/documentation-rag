@@ -80,6 +80,24 @@ def test_found_sources_only_current_turn():
     assert found_sources_for_turn(messages) == [b, a]
 
 
+def test_found_sources_include_search_of_unfinished_previous_turn():
+    # Real Gemini: a run failed with 429 after the search, the user re-asked, and the model answered from the
+    # earlier tool result without searching again. That search was never used in a finished answer, so it counts.
+    a = src("a.pdf", 1)
+    b = src("b.md", section="Оборудование")
+    messages = [
+        HumanMessage("первый"),
+        ToolMessage("...", tool_call_id="1", name="search_documents", artifact=[a]),
+        AIMessage("ответ [a.pdf, стр. 1]"),
+        HumanMessage("второй"),
+        AIMessage("", tool_calls=[{"name": "search_documents", "args": {"query": "q"}, "id": "2"}]),
+        ToolMessage("...", tool_call_id="2", name="search_documents", artifact=[b]),
+        HumanMessage("второй, повтор после ошибки"),
+        AIMessage('ответ [b.md, раздел "Оборудование"]'),
+    ]
+    assert found_sources_for_turn(messages) == [b]
+
+
 def test_extract_sources_file_name_with_comma():
     found = [{"source": "Положение, ред. 2.pdf", "page": 1, "section": None}]
     answer = "Ответ [Положение, ред. 2.pdf, стр. 1]"
