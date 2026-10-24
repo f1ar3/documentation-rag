@@ -219,3 +219,40 @@ def test_extract_parts_unsupported(tmp_path):
     p.write_bytes(b"x")
     with pytest.raises(UnsupportedFormatError):
         extract_parts(p, p.name)
+
+
+def _md_parts(tmp_path, content):
+    p = tmp_path / "doc.md"
+    p.write_text(content, encoding="utf-8")
+    return [(x.section, x.text) for x in extract_parts(p, p.name)]
+
+
+@pytest.mark.parametrize(
+    "content, expected",
+    [
+        # headings inside fenced code blocks stay in the text
+        ("# A\n```\n# not heading\n```\nafter", [("A", "```\n# not heading\n```\nafter")]),
+        ("# A\n~~~\n# not heading\n~~~\nafter", [("A", "~~~\n# not heading\n~~~\nafter")]),
+        # blank lines and indentation are preserved exactly
+        ("# A\nline1\n\n\n    indented\n\nline2", [("A", "line1\n\n\n    indented\n\nline2")]),
+        # #### stays in the body, section is the deepest of #/##/###
+        (
+            "# A\n## B\n### C\n#### D\nbody",
+            [("C", "#### D\nbody")],
+        ),
+        # text before the first heading has no section
+        ("intro\n# A\nbody", [(None, "intro"), ("A", "body")]),
+        # #hashtag is not a heading
+        ("# A\n#hashtag text", [("A", "#hashtag text")]),
+        # trailing ## is removed from a heading
+        ("# Title ##\nbody", [("Title", "body")]),
+        # setext headings are not headings
+        ("Title\n=====\nbody\n\nSub\n---\nmore", [(None, "Title\n=====\nbody\n\nSub\n---\nmore")]),
+    ],
+)
+def test_md_splitter(tmp_path, content, expected):
+    assert _md_parts(tmp_path, content) == expected
+
+
+def test_md_empty_heading_keeps_parent_section(tmp_path):
+    assert _md_parts(tmp_path, "# A\n## \nbody") == [("A", "body")]

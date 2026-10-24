@@ -22,4 +22,19 @@ describe('reflowPdfText', () => {
   it('keeps blank lines and trims trailing spaces of joined lines', () => {
     expect(reflowPdfText('Абзац один  \nпродолжение\n\nАбзац два')).toBe('Абзац один продолжение\n\nАбзац два')
   })
+
+  it('starts a new line for lettered sub-clauses', () => {
+    expect(reflowPdfText('Отпуск предоставляется:\nа) ежегодный\nоплачиваемый;\nб) учебный;\na) extra')).toBe(
+      'Отпуск предоставляется:\nа) ежегодный оплачиваемый;\nб) учебный;\na) extra',
+    )
+  })
+
+  it('joins a word hyphenated at the line end when the next line is lowercase', () => {
+    expect(reflowPdfText('Отпуск предоста-\nвляется работнику.')).toBe('Отпуск предоставляется работнику.')
+  })
+
+  it('keeps the hyphen when the next line starts with a capital letter or a digit', () => {
+    expect(reflowPdfText('Санкт-\nПетербург')).toBe('Санкт- Петербург')
+    expect(reflowPdfText('Пункт-\n5 действует')).toBe('Пункт- 5 действует')
+  })
 })
